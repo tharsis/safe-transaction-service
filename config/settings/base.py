@@ -83,6 +83,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_yasg",
     "django_s3_storage",
+    "rest_framework.authtoken",
 ]
 LOCAL_APPS = [
     "safe_transaction_service.contracts.apps.ContractsConfig",
@@ -228,7 +229,10 @@ CELERY_IGNORE_RESULT = True
 # http://docs.celeryproject.org/en/latest/userguide/configuration.html#std:setting-task_always_eager
 CELERY_ALWAYS_EAGER = False
 # https://docs.celeryproject.org/en/latest/userguide/configuration.html#task-default-priority
-CELERY_TASK_DEFAULT_PRIORITY = 5  # Higher = more priority
+# Higher = more priority on RabbitMQ, opposite on Redis ¯\_(ツ)_/¯
+CELERY_TASK_DEFAULT_PRIORITY = 3
+# https://docs.celeryproject.org/en/stable/userguide/configuration.html#task-queue-max-priority
+CELERY_TASK_QUEUE_MAX_PRIORITY = 10
 # https://docs.celeryproject.org/en/latest/userguide/configuration.html#broker-transport-options
 CELERY_BROKER_TRANSPORT_OPTIONS = {
     "queue_order_strategy": "priority",
@@ -264,6 +268,9 @@ LOGGING = {
     "disable_existing_loggers": False,
     "filters": {
         "require_debug_false": {"()": "django.utils.log.RequireDebugFalse"},
+        "ignore_succeeded_none": {
+            "()": "safe_transaction_service.utils.loggers.IgnoreSucceededNone"
+        },
     },
     "formatters": {
         "short": {"format": "%(asctime)s %(message)s"},
@@ -293,6 +300,7 @@ LOGGING = {
         },
         "celery_console": {
             "level": "DEBUG",
+            "filters": [] if DEBUG else ["ignore_succeeded_none"],
             "class": "logging.StreamHandler",
             "formatter": "celery_verbose",
         },
@@ -414,5 +422,10 @@ AWS_CONFIGURED = bool(
 )
 
 ETHERSCAN_API_KEY = env("ETHERSCAN_API_KEY", default=None)
-IPFS_GATEWAY = env("IPFS_GATEWAY", default="https://cloudflare-ipfs.com/")
-ENABLE_OWNERS_ENDPOINT = env.bool("ENABLE_OWNERS_ENDPOINT", default=True)
+IPFS_GATEWAY = env("IPFS_GATEWAY", default="https://cloudflare-ipfs.com/ipfs/")
+
+SWAGGER_SETTINGS = {
+    "SECURITY_DEFINITIONS": {
+        "api_key": {"type": "apiKey", "in": "header", "name": "Authorization"}
+    },
+}
