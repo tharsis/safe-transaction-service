@@ -83,7 +83,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_yasg",
     "django_s3_storage",
-    # "rest_framework.authtoken",
+    "rest_framework.authtoken",
 ]
 LOCAL_APPS = [
     "safe_transaction_service.contracts.apps.ContractsConfig",
