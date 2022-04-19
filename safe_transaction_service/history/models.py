@@ -17,6 +17,7 @@ from typing import (
     TypedDict,
     Union,
 )
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
@@ -1538,17 +1539,18 @@ class SafeStatusQuerySet(models.QuerySet):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                    SELECT DISTINCT(address)
+                    SELECT address
                     FROM (
-                        SELECT address, owners,
-                                rank() OVER (PARTITION BY address ORDER BY nonce DESC, internal_tx_id DESC) AS pos
+                        SELECT DISTINCT ON(address) address, owners
                         FROM history_safestatus
                         WHERE address IN (
+                            -- Do a first filtering
                             SELECT address FROM history_safestatus
                             WHERE owners @> ARRAY[%s]::bytea[]
                         )
-                        ) AS ss
-                    WHERE pos = 1 AND owners @> ARRAY[%s]::bytea[];
+                        ORDER BY address, nonce DESC, internal_tx_id DESC
+                    ) AS sq
+                    WHERE owners @> ARRAY[%s]::bytea[];
                 """,
                 [HexBytes(owner_address), HexBytes(owner_address)],
             )
@@ -1646,24 +1648,50 @@ class WebHookQuerySet(models.QuerySet):
         return self.filter(Q(address=address) | Q(address=None))
 
 
+def _validate_webhook_url(url: str) -> None:
+    result = urlparse(url)
+    if not all(
+        (
+            result.scheme
+            in (
+                "http",
+                "https",
+            ),
+            result.netloc,
+        )
+    ):
+        raise ValidationError(f"{url} is not a valid url")
+
+
 class WebHook(models.Model):
     objects = WebHookQuerySet.as_manager()
     address = EthereumAddressV2Field(db_index=True, null=True, blank=True)
-    url = models.URLField()
+    url = models.CharField(max_length=255, validators=[_validate_webhook_url])
     authorization = models.CharField(
         max_length=500,
         null=True,
+        blank=True,
         default=None,
         help_text="Set HTTP Authorization header with the value",
     )
     # Configurable webhook types to listen to
-    new_confirmation = models.BooleanField(default=True)
-    pending_outgoing_transaction = models.BooleanField(default=True)
-    new_executed_outgoing_transaction = models.BooleanField(default=True)
-    new_incoming_transaction = models.BooleanField(default=True)
-    new_safe = models.BooleanField(default=True)
-    new_module_transaction = models.BooleanField(default=True)
-    new_outgoing_transaction = models.BooleanField(default=True)
+    new_confirmation = models.BooleanField(default=True, help_text="New confirmation")
+    pending_multisig_transaction = models.BooleanField(
+        default=True, help_text="New pending multisig transaction"
+    )
+    new_executed_multisig_transaction = models.BooleanField(
+        default=True, help_text="New mined multisig transaction"
+    )
+    new_incoming_transaction = models.BooleanField(
+        default=True, help_text="New incoming transaction of eth/token"
+    )
+    new_safe = models.BooleanField(default=True, help_text="New Safe created")
+    new_module_transaction = models.BooleanField(
+        default=True, help_text="New mined module transaction"
+    )
+    new_outgoing_transaction = models.BooleanField(
+        default=True, help_text="New outgoing transaction of eth/token"
+    )
 
     class Meta:
         unique_together = (("address", "url"),)
@@ -1679,12 +1707,12 @@ class WebHook(models.Model):
             return False
         elif (
             webhook_type == WebHookType.PENDING_MULTISIG_TRANSACTION
-            and not self.pending_outgoing_transaction
+            and not self.pending_multisig_transaction
         ):
             return False
         elif (
             webhook_type == WebHookType.EXECUTED_MULTISIG_TRANSACTION
-            and not self.new_executed_outgoing_transaction
+            and not self.new_executed_multisig_transaction
         ):
             return False
         elif (

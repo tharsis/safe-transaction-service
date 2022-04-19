@@ -71,8 +71,10 @@ class AboutView(APIView):
         content = {
             "name": "Safe Transaction Service",
             "version": __version__,
-            "api_version": self.request.version,
-            "secure": self.request.is_secure(),
+            "api_version": request.version,
+            "secure": request.is_secure(),
+            "host": request.get_host(),
+            "headers": [x for x in request.META.keys() if "FORWARD" in x],
             "settings": {
                 "AWS_CONFIGURED": settings.AWS_CONFIGURED,
                 "AWS_S3_BUCKET_NAME": settings.AWS_S3_BUCKET_NAME,
@@ -88,6 +90,7 @@ class AboutView(APIView):
                 "ETH_L2_NETWORK": settings.ETH_L2_NETWORK,
                 "ETH_REORG_BLOCKS": settings.ETH_REORG_BLOCKS,
                 "NOTIFICATIONS_FIREBASE_CREDENTIALS_PATH": settings.NOTIFICATIONS_FIREBASE_CREDENTIALS_PATH,
+                "SSO_ENABLED": settings.SSO_ENABLED,
                 "TOKENS_LOGO_BASE_URI": settings.TOKENS_LOGO_BASE_URI,
                 "TOKENS_LOGO_EXTENSION": settings.TOKENS_LOGO_EXTENSION,
             },
