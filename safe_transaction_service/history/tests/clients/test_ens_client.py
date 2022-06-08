@@ -53,7 +53,7 @@ class TestEnsClient(TestCase):
                         },
                     },
                     {
-                        "expiryDate": "2288867573",
+                        "expiryDate": "2320424525",
                         "domain": {
                             "labelName": "vitalik",
                             "labelhash": "0xaf2caa1c2ca1d027f1ac823b529d0a67cd144264b2789fa2ea4d63a67c7103cc",
