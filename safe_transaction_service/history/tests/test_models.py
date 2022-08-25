@@ -16,6 +16,7 @@ from gnosis.safe.safe_signature import SafeSignatureType
 from safe_transaction_service.contracts.models import ContractQuerySet
 from safe_transaction_service.contracts.tests.factories import ContractFactory
 
+from ...tokens.tests.factories import TokenFactory
 from ..models import (
     ERC20Transfer,
     ERC721Transfer,
@@ -176,6 +177,16 @@ class TestMultisigTransaction(TestCase):
         )["signature"]
         multisig_transaction.save()
         self.assertEqual(multisig_transaction.owners, [account.address])
+
+    def test_multisend(self):
+        self.assertEqual(MultisigTransaction.objects.multisend().count(), 0)
+        MultisigTransactionFactory()
+
+        MultisigTransactionFactory(to="0x998739BFdAAdde7C933B942a68053933098f9EDa")
+        self.assertEqual(MultisigTransaction.objects.multisend().count(), 1)
+
+        MultisigTransactionFactory(to="0x40A2aCCbd92BCA938b02010E17A5b8929b49130D")
+        self.assertEqual(MultisigTransaction.objects.multisend().count(), 2)
 
     def test_queued(self):
         safe_address = Account.create().address
@@ -412,6 +423,46 @@ class TestTokenTransfer(TestCase):
         ERC721TransferFactory(_from=random_address, to=random_address, token_id=6)
         self.assertEqual(
             len(ERC721Transfer.objects.erc721_owned_by(address=random_address)), 1
+        )
+
+    def test_erc721_owned_by_trusted_spam(self):
+        random_address = Account.create().address
+        self.assertEqual(
+            ERC721Transfer.objects.erc721_owned_by(address=random_address), []
+        )
+        erc721_transfer = ERC721TransferFactory(to=random_address)
+        erc721_transfer_2 = ERC721TransferFactory(to=random_address)
+        token = TokenFactory(address=erc721_transfer.address, spam=True)
+        self.assertEqual(
+            len(ERC721Transfer.objects.erc721_owned_by(address=random_address)), 2
+        )
+        self.assertEqual(
+            len(
+                ERC721Transfer.objects.erc721_owned_by(
+                    address=random_address, exclude_spam=True
+                )
+            ),
+            1,
+        )
+
+        self.assertEqual(
+            len(
+                ERC721Transfer.objects.erc721_owned_by(
+                    address=random_address, only_trusted=True
+                )
+            ),
+            0,
+        )
+        token.trusted = True
+        token.spam = False
+        token.save(update_fields=["trusted", "spam"])
+        self.assertEqual(
+            len(
+                ERC721Transfer.objects.erc721_owned_by(
+                    address=random_address, only_trusted=True
+                )
+            ),
+            1,
         )
 
 
@@ -672,6 +723,61 @@ class TestLastSafeStatus(TestCase):
         safe_last_status.save()
         self.assertEqual(SafeStatus.objects.count(), 2)
         self.assertEqual(SafeLastStatus.objects.count(), 1)
+
+    def test_address_for_module(self):
+        module_address = Account.create().address
+        address = Account.create().address
+        address_2 = Account.create().address
+        self.assertCountEqual(
+            SafeLastStatus.objects.addresses_for_module(module_address), []
+        )
+        safe_last_status = SafeLastStatusFactory(
+            address=address, nonce=0, enabled_modules=[module_address]
+        )
+        self.assertCountEqual(
+            SafeLastStatus.objects.addresses_for_module(module_address), [address]
+        )
+        safe_last_status.delete()
+        safe_last_status = SafeLastStatusFactory(address=address, nonce=1)
+        self.assertCountEqual(
+            SafeLastStatus.objects.addresses_for_module(module_address), []
+        )
+        safe_last_status.delete()
+        safe_last_status = SafeLastStatusFactory(
+            address=address, nonce=2, enabled_modules=[module_address]
+        )
+        safe_last_status_2 = SafeLastStatusFactory(
+            address=address_2, nonce=0, enabled_modules=[module_address]
+        )
+        self.assertCountEqual(
+            SafeLastStatus.objects.addresses_for_module(module_address),
+            [address, address_2],
+        )
+        # Remove the module from one of the Safes
+        new_module = Account.create().address
+        safe_last_status.delete()
+        safe_last_status = SafeLastStatusFactory(
+            address=address, nonce=3, enabled_modules=[new_module]
+        )
+        self.assertCountEqual(
+            SafeLastStatus.objects.addresses_for_module(module_address), [address_2]
+        )
+
+        # Add new module for the other Safe
+        safe_last_status_2.delete()
+        safe_last_status_2 = SafeLastStatusFactory(
+            address=address_2, nonce=1, enabled_modules=[module_address, new_module]
+        )
+        self.assertCountEqual(
+            SafeLastStatus.objects.addresses_for_module(module_address), [address_2]
+        )
+
+        # Remove the module from the other Safe
+        safe_last_status_2.delete()
+        SafeLastStatusFactory(address=address_2, nonce=2, enabled_modules=[new_module])
+        self.assertCountEqual(
+            SafeLastStatus.objects.addresses_for_module(module_address), []
+        )
 
     def test_addresses_for_owner(self):
         owner_address = Account.create().address
@@ -1151,17 +1257,19 @@ class TestMultisigTransactions(TestCase):
         )
 
     def test_not_indexed_metadata_contract_addresses(self):
+        # Transaction must be trusted
+        MultisigTransactionFactory(data=b"12")
         self.assertFalse(
             MultisigTransaction.objects.not_indexed_metadata_contract_addresses()
         )
 
-        MultisigTransactionFactory(data=None)
+        MultisigTransactionFactory(trusted=True, data=None)
         self.assertFalse(
             MultisigTransaction.objects.not_indexed_metadata_contract_addresses()
         )
-        multisig_transaction = MultisigTransactionFactory(data=b"12")
+        multisig_transaction = MultisigTransactionFactory(trusted=True, data=b"12")
         MultisigTransactionFactory(
-            data=b"12", to=multisig_transaction.to
+            trusted=True, data=b"12", to=multisig_transaction.to
         )  # Check distinct
         self.assertCountEqual(
             MultisigTransaction.objects.not_indexed_metadata_contract_addresses(),
