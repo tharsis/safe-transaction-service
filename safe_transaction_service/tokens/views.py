@@ -6,13 +6,14 @@ from django.views.decorators.cache import cache_page
 import django_filters.rest_framework
 from rest_framework import response, status
 from rest_framework.filters import OrderingFilter, SearchFilter
-from rest_framework.generics import GenericAPIView, ListAPIView, RetrieveAPIView
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
-from web3 import Web3
 
 from gnosis.eth.constants import NULL_ADDRESS
+from gnosis.eth.utils import fast_is_checksum_address
 
 from . import filters, serializers
+from .clients import CannotGetPrice
 from .models import Token
 from .services import PriceServiceProvider
 from .tasks import get_token_info_from_blockchain_task
@@ -26,7 +27,7 @@ class TokenView(RetrieveAPIView):
     @method_decorator(cache_page(60 * 60))  # Cache 1 hour, this should never change
     def get(self, request, *args, **kwargs):
         address = self.kwargs["address"]
-        if not Web3.isChecksumAddress(address):
+        if not fast_is_checksum_address(address):
             return response.Response(
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 data={
@@ -61,7 +62,7 @@ class TokensView(ListAPIView):
         return super().get(request, *args, **kwargs)
 
 
-class TokenPriceView(GenericAPIView):
+class TokenPriceView(RetrieveAPIView):
     serializer_class = serializers.TokenPriceResponseSerializer
     lookup_field = "address"
     queryset = Token.objects.all()
@@ -69,7 +70,7 @@ class TokenPriceView(GenericAPIView):
     @method_decorator(cache_page(60 * 10))  # Cache 10 minutes
     def get(self, request, *args, **kwargs):
         address = self.kwargs["address"]
-        if not Web3.isChecksumAddress(address):
+        if not fast_is_checksum_address(address):
             return response.Response(
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 data={
@@ -78,25 +79,34 @@ class TokenPriceView(GenericAPIView):
                     "arguments": [address],
                 },
             )
+        try:
+            price_service = PriceServiceProvider()
+            if address == NULL_ADDRESS:
+                data = {
+                    "fiat_code": "USD",
+                    "fiat_price": str(price_service.get_native_coin_usd_price()),
+                    "timestamp": timezone.now(),
+                }
+            else:
+                token = self.get_object()  # Raises 404 if not found
+                fiat_price_with_timestamp = next(
+                    price_service.get_cached_usd_values([token.get_price_address()])
+                )
+                data = {
+                    "fiat_code": fiat_price_with_timestamp.fiat_code.name,
+                    "fiat_price": str(fiat_price_with_timestamp.fiat_price),
+                    "timestamp": fiat_price_with_timestamp.timestamp,
+                }
+            serializer = self.get_serializer(data=data)
+            assert serializer.is_valid()
+            return Response(status=status.HTTP_200_OK, data=serializer.data)
 
-        price_service = PriceServiceProvider()
-        if address == NULL_ADDRESS:
-            data = {
-                "fiat_code": "USD",
-                "fiat_price": str(price_service.get_native_coin_usd_price()),
-                "timestamp": timezone.now(),
-            }
-        else:
-            token = self.get_object()  # Raises 404 if not found
-            fiat_price_with_timestamp = next(
-                price_service.get_cached_usd_values([token.get_price_address()])
+        except CannotGetPrice:
+            return Response(
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                data={
+                    "code": 10,
+                    "message": "Price retrieval failed",
+                    "arguments": [address],
+                },
             )
-            data = {
-                "fiat_code": fiat_price_with_timestamp.fiat_code.name,
-                "fiat_price": str(fiat_price_with_timestamp.fiat_price),
-                "timestamp": fiat_price_with_timestamp.timestamp,
-            }
-
-        serializer = self.get_serializer(data=data)
-        assert serializer.is_valid()
-        return Response(status=status.HTTP_200_OK, data=serializer.data)
