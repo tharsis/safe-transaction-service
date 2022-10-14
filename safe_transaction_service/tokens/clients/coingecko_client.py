@@ -38,6 +38,8 @@ class CoingeckoClient:
             self.asset_platform = "xdai"
         elif network == EthereumNetwork.EVMOS_MAINNET:
             self.asset_platform = "evmos"
+        elif network == EthereumNetwork.FUSE_MAINNET:
+            self.asset_platform = "fuse"
         else:
             self.asset_platform = "ethereum"
 
@@ -53,6 +55,7 @@ class CoingeckoClient:
             EthereumNetwork.OPTIMISTIC,
             EthereumNetwork.XDAI,
             EthereumNetwork.EVMOS_MAINNET,
+            EthereumNetwork.FUSE_MAINNET,
         )
 
     def _do_request(self, url: str) -> Dict[str, Any]:
@@ -144,3 +147,6 @@ class CoingeckoClient:
 
     def get_evmos_usd_price(self) -> float:
         return self.get_price("evmos")
+
+    def get_fuse_usd_price(self) -> float:
+        return self.get_price("fuse-network-token")
