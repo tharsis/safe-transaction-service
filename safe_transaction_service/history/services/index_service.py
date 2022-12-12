@@ -10,6 +10,7 @@ from hexbytes import HexBytes
 
 from gnosis.eth import EthereumClient, EthereumClientProvider
 
+from ..helpers import Erc20IndexerStorage
 from ..models import (
     EthereumBlock,
     EthereumTx,
@@ -17,7 +18,6 @@ from ..models import (
     ModuleTransaction,
     MultisigConfirmation,
     MultisigTransaction,
-    SafeContract,
     SafeMasterCopy,
     SafeStatus,
 )
@@ -87,6 +87,7 @@ class IndexService:
         alert_out_of_sync_events_threshold: float,
     ):
         self.ethereum_client = ethereum_client
+        self.erc20_indexer_storage = Erc20IndexerStorage(self.ethereum_client)
         self.eth_reorg_blocks = eth_reorg_blocks
         self.eth_l2_network = eth_l2_network
         self.alert_out_of_sync_events_threshold = alert_out_of_sync_events_threshold
@@ -108,11 +109,7 @@ class IndexService:
 
     def get_indexing_status(self) -> IndexingStatus:
         current_block_number = self.ethereum_client.current_block_number
-        erc20_block_number = SafeContract.objects.aggregate(
-            min_erc20_block_number=Min("erc20_block_number")
-        )["min_erc20_block_number"]
-        if erc20_block_number is None:  # Still nothing indexed
-            erc20_block_number = current_block_number
+        erc20_block_number = self.erc20_indexer_storage.get_last_indexed_block_number()
 
         master_copies_block_number = SafeMasterCopy.objects.relevant().aggregate(
             min_master_copies_block_number=Min("tx_block_number")
@@ -138,11 +135,7 @@ class IndexService:
 
     def get_erc20_indexing_status(self) -> ERC20IndexingStatus:
         current_block_number = self.ethereum_client.current_block_number
-        erc20_block_number = SafeContract.objects.aggregate(
-            min_erc20_block_number=Min("erc20_block_number")
-        )["min_erc20_block_number"]
-        if erc20_block_number is None:  # Still nothing indexed
-            erc20_block_number = current_block_number
+        erc20_block_number = self.erc20_indexer_storage.get_last_indexed_block_number()
         synced = (current_block_number - erc20_block_number) <= self.eth_reorg_blocks
 
         return ERC20IndexingStatus(
@@ -160,26 +153,19 @@ class IndexService:
         reference_block_number = (
             self.ethereum_client.current_block_number - self.eth_reorg_blocks
         )
-        synced = True
+        synced: bool = True
         for safe_master_copy in SafeMasterCopy.objects.relevant().filter(
             tx_block_number__lt=reference_block_number
         ):
             logger.error("Master Copy %s is out of sync", safe_master_copy.address)
             synced = False
 
-        out_of_sync_contracts = SafeContract.objects.filter(
-            erc20_block_number__lt=reference_block_number
-        ).count()
-        if out_of_sync_contracts > 0:
-            total_number_of_contracts = SafeContract.objects.all().count()
-            proportion_out_of_sync = out_of_sync_contracts / total_number_of_contracts
-            # Ignore less than 10% of contracts out of sync
-            if proportion_out_of_sync >= self.alert_out_of_sync_events_threshold:
-                logger.error(
-                    "%d Safe Contracts have ERC20/721 out of sync",
-                    out_of_sync_contracts,
-                )
-                synced = False
+        if (
+            self.erc20_indexer_storage.get_last_indexed_block_number()
+            < reference_block_number
+        ):
+            logger.error("Safe Contracts have ERC20/721 out of sync")
+            synced = False
 
         return synced
 
