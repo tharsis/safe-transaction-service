@@ -10,14 +10,14 @@ from hexbytes import HexBytes
 
 from gnosis.eth import EthereumClient, EthereumClientProvider
 
-from ..helpers import Erc20IndexerStorage
+from ..models import EthereumBlock, EthereumTx
+from ..models import IndexingStatus as IndexingStatusDb
 from ..models import (
-    EthereumBlock,
-    EthereumTx,
     InternalTxDecoded,
     ModuleTransaction,
     MultisigConfirmation,
     MultisigTransaction,
+    SafeLastStatus,
     SafeMasterCopy,
     SafeStatus,
 )
@@ -87,7 +87,6 @@ class IndexService:
         alert_out_of_sync_events_threshold: float,
     ):
         self.ethereum_client = ethereum_client
-        self.erc20_indexer_storage = Erc20IndexerStorage(self.ethereum_client)
         self.eth_reorg_blocks = eth_reorg_blocks
         self.eth_l2_network = eth_l2_network
         self.alert_out_of_sync_events_threshold = alert_out_of_sync_events_threshold
@@ -107,9 +106,12 @@ class IndexService:
                 block, confirmed=confirmed
             )
 
+    def get_erc20_721_current_indexing_block_number(self) -> int:
+        return IndexingStatusDb.objects.get_erc20_721_indexing_status().block_number
+
     def get_indexing_status(self) -> IndexingStatus:
         current_block_number = self.ethereum_client.current_block_number
-        erc20_block_number = self.erc20_indexer_storage.get_last_indexed_block_number()
+        erc20_block_number = self.get_erc20_721_current_indexing_block_number()
 
         master_copies_block_number = SafeMasterCopy.objects.relevant().aggregate(
             min_master_copies_block_number=Min("tx_block_number")
@@ -135,7 +137,7 @@ class IndexService:
 
     def get_erc20_indexing_status(self) -> ERC20IndexingStatus:
         current_block_number = self.ethereum_client.current_block_number
-        erc20_block_number = self.erc20_indexer_storage.get_last_indexed_block_number()
+        erc20_block_number = self.get_erc20_721_current_indexing_block_number()
         synced = (current_block_number - erc20_block_number) <= self.eth_reorg_blocks
 
         return ERC20IndexingStatus(
@@ -160,10 +162,7 @@ class IndexService:
             logger.error("Master Copy %s is out of sync", safe_master_copy.address)
             synced = False
 
-        if (
-            self.erc20_indexer_storage.get_last_indexed_block_number()
-            < reference_block_number
-        ):
+        if self.get_erc20_721_current_indexing_block_number() < reference_block_number:
             logger.error("Safe Contracts have ERC20/721 out of sync")
             synced = False
 
@@ -309,7 +308,7 @@ class IndexService:
 
         logger.info("Remove transactions automatically indexed")
         queryset = MultisigTransaction.objects.exclude(ethereum_tx=None).filter(
-            Q(origin=None) | Q(origin="")
+            Q(origin__exact={})
         )
         if addresses:
             queryset = queryset.filter(safe__in=addresses)
@@ -322,8 +321,13 @@ class IndexService:
         queryset.delete()
 
         logger.info("Remove Safe statuses")
-
         queryset = SafeStatus.objects.all()
+        if addresses:
+            queryset = queryset.filter(address__in=addresses)
+        queryset.delete()
+
+        logger.info("Remove Safe Last statuses")
+        queryset = SafeLastStatus.objects.all()
         if addresses:
             queryset = queryset.filter(address__in=addresses)
         queryset.delete()

@@ -1,3 +1,4 @@
+import json
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -130,6 +131,18 @@ class SafeMultisigTransactionSerializer(SafeMultisigTxSerializerV1):
         allow_null=True, required=False, min_length=65
     )  # Signatures must be at least 65 bytes
     origin = serializers.CharField(max_length=200, allow_null=True, default=None)
+
+    def validate_origin(self, origin):
+        # Origin field on db is a JsonField
+        if origin:
+            try:
+                origin = json.loads(origin)
+            except ValueError:
+                pass
+        else:
+            origin = {}
+
+        return origin
 
     def validate(self, attrs):
         super().validate(attrs)

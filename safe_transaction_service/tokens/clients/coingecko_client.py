@@ -133,6 +133,9 @@ class CoingeckoClient:
         if token_info:
             return token_info["image"]["large"]
 
+    def get_ada_usd_price(self) -> float:
+        return self.get_price("cardano")
+
     def get_avax_usd_price(self) -> float:
         return self.get_price("avalanche-2")
 
