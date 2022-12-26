@@ -901,6 +901,19 @@ class TestSafeLastStatus(TestCase):
         SafeLastStatusFactory(address=address, nonce=17)
         self.assertEqual(SafeLastStatus.objects.get_or_generate(address).nonce, 17)
 
+    def test_is_corrupted(self):
+        address = Account.create().address
+        SafeStatusFactory(address=address, nonce=0)
+        SafeStatusFactory(address=address, nonce=2)
+        safe_last_status = SafeLastStatus.objects.get_or_generate(address)
+        self.assertTrue(safe_last_status.is_corrupted())
+
+        SafeStatusFactory(address=address, nonce=1)
+        self.assertFalse(safe_last_status.is_corrupted())
+
+        SafeStatus.objects.all().delete()
+        self.assertFalse(safe_last_status.is_corrupted())
+
 
 class TestSafeStatus(TestCase):
     def test_safe_status_is_corrupted(self):
@@ -1323,6 +1336,69 @@ class TestMultisigTransactions(TestCase):
         ContractFactory(address=multisig_transaction.to)
         self.assertFalse(
             MultisigTransaction.objects.not_indexed_metadata_contract_addresses()
+        )
+
+    def test_with_confirmations_required(self):
+        # This should never be picked
+        SafeStatusFactory(nonce=0, threshold=4)
+
+        multisig_transaction = MultisigTransactionFactory()
+        self.assertIsNone(
+            MultisigTransaction.objects.with_confirmations_required()
+            .first()
+            .confirmations_required
+        )
+
+        # SafeStatus not matching the EthereumTx
+        safe_status = SafeStatusFactory(nonce=1, threshold=8)
+        self.assertIsNone(
+            MultisigTransaction.objects.with_confirmations_required()
+            .first()
+            .confirmations_required
+        )
+
+        safe_status.internal_tx.ethereum_tx = multisig_transaction.ethereum_tx
+        safe_status.internal_tx.save(update_fields=["ethereum_tx"])
+
+        self.assertEqual(
+            MultisigTransaction.objects.with_confirmations_required()
+            .first()
+            .confirmations_required,
+            8,
+        )
+
+        # It will not be picked, as EthereumTx is not matching
+        SafeStatusFactory(nonce=2, threshold=15)
+        self.assertEqual(
+            MultisigTransaction.objects.with_confirmations_required()
+            .first()
+            .confirmations_required,
+            8,
+        )
+
+        # As EthereumTx is empty, the latest safe status will be used if available
+        multisig_transaction.ethereum_tx = None
+        multisig_transaction.save(update_fields=["ethereum_tx"])
+        self.assertIsNone(
+            MultisigTransaction.objects.with_confirmations_required()
+            .first()
+            .confirmations_required
+        )
+
+        # Not matching address should not return anything
+        SafeLastStatusFactory(nonce=2, threshold=16)
+        self.assertIsNone(
+            MultisigTransaction.objects.with_confirmations_required()
+            .first()
+            .confirmations_required
+        )
+
+        SafeLastStatusFactory(address=multisig_transaction.safe, nonce=2, threshold=15)
+        self.assertEqual(
+            MultisigTransaction.objects.with_confirmations_required()
+            .first()
+            .confirmations_required,
+            15,
         )
 
     def test_with_confirmations(self):

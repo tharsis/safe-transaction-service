@@ -30,6 +30,9 @@ class KrakenClient:
         except (ValueError, IOError) as e:
             raise CannotGetPrice from e
 
+    def get_ada_usd_price(self) -> float:
+        return self._get_price("ADAUSD")
+
     def get_avax_usd_price(self) -> float:
         """
         :return: current USD price for AVAX
@@ -52,7 +55,22 @@ class KrakenClient:
         return self._get_price("ETHUSD")
 
     def get_matic_usd_price(self):
+        """
+        :return: current USD price for MATIC
+        :raises: CannotGetPrice
+        """
         return self._get_price("MATICUSD")
 
     def get_ewt_usd_price(self) -> float:
+        """
+        :return: current USD price for Energy Web Token
+        :raises: CannotGetPrice
+        """
         return self._get_price("EWTUSD")
+
+    def get_algo_usd_price(self):
+        """
+        :return: current USD price for Algorand
+        :raises: CannotGetPrice
+        """
+        return self._get_price("ALGOUSD")

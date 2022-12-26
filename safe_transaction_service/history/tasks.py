@@ -1,9 +1,12 @@
 import contextlib
 import dataclasses
 import json
+import random
 from functools import cache
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
+
+from django.conf import settings
 
 import requests
 from celery import app
@@ -67,8 +70,8 @@ def check_reorgs_task(self) -> Optional[int]:
                 return first_reorg_block_number
 
 
-@app.shared_task(bind=True, soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
-def check_sync_status_task(self) -> bool:
+@app.shared_task(soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
+def check_sync_status_task() -> bool:
     """
     Check indexing status of the service
     """
@@ -102,12 +105,9 @@ def index_erc20_events_task(self) -> Optional[int]:
             return number_events
 
 
-@app.shared_task(
-    bind=True,
-)
+@app.shared_task
 @close_gevent_db_connection_decorator
 def index_erc20_events_out_of_sync_task(
-    self,
     block_process_limit: Optional[int] = None,
     block_process_limit_max: Optional[int] = None,
     addresses: Optional[ChecksumAddress] = None,
@@ -127,9 +127,9 @@ def index_erc20_events_out_of_sync_task(
     current_block_number = erc20_events_indexer.ethereum_client.current_block_number
     addresses = addresses or [
         x.address
-        for x in erc20_events_indexer.get_not_updated_addresses(current_block_number)[
-            :number_of_addresses
-        ]
+        for x in erc20_events_indexer.get_almost_updated_addresses(
+            current_block_number
+        )[:number_of_addresses]
     ]
 
     if not addresses:
@@ -396,13 +396,22 @@ def process_decoded_internal_txs_for_safe_task(
                 tx_processor.clear_cache(safe_address)
                 index_service.reprocess_addresses([safe_address])
 
-            # Use iterator for memory issues
-            internal_txs_decoded = InternalTxDecoded.objects.pending_for_safe(
-                safe_address
-            ).iterator()
-            number_processed = len(
-                tx_processor.process_decoded_transactions(internal_txs_decoded)
-            )
+            # Use chunks for memory issues
+            number_processed = 0
+            while True:
+                internal_txs_decoded_queryset = (
+                    InternalTxDecoded.objects.pending_for_safe(safe_address)[
+                        : settings.ETH_INTERNAL_TX_DECODED_PROCESS_BATCH
+                    ]
+                )
+                if not internal_txs_decoded_queryset:
+                    break
+                number_processed += len(
+                    tx_processor.process_decoded_transactions(
+                        internal_txs_decoded_queryset
+                    )
+                )
+
             logger.info("Processed %d decoded transactions", number_processed)
             if number_processed:
                 logger.info(
@@ -494,10 +503,8 @@ def send_webhook_task(address: Optional[str], payload: Dict[str, Any]) -> int:
 
 @app.shared_task(
     soft_time_limit=SOFT_TIMEOUT,
-    autoretry_for=(MetadataRetrievalExceptionTimeout,),
     time_limit=LOCK_TIMEOUT,
-    retry_backoff=60,
-    retry_kwargs={"max_retries": 4},
+    max_retries=4,
 )
 def retry_get_metadata_task(
     address: ChecksumAddress, token_id: int
@@ -534,25 +541,42 @@ def retry_get_metadata_task(
 
     # Maybe other task already retrieved the metadata
     cached_metadata = collectible_with_metadata_cached["metadata"]
-    metadata = (
-        cached_metadata
-        if cached_metadata
-        else collectibles_service.get_metadata(collectible)
-    )
-    collectible_with_metadata = CollectibleWithMetadata(
-        collectible.token_name,
-        collectible.token_symbol,
-        collectible.logo_uri,
-        collectible.address,
-        collectible.id,
-        collectible.uri,
-        metadata,
-    )
-
-    redis.set(
-        redis_key,
-        json.dumps(dataclasses.asdict(collectible_with_metadata)),
-        collectibles_service.COLLECTIBLE_EXPIRATION,
-    )
-
+    try:
+        metadata = (
+            cached_metadata
+            if cached_metadata
+            else collectibles_service.get_metadata(collectible)
+        )
+        collectible_with_metadata = CollectibleWithMetadata(
+            collectible.token_name,
+            collectible.token_symbol,
+            collectible.logo_uri,
+            collectible.address,
+            collectible.id,
+            collectible.uri,
+            metadata,
+        )
+        redis.set(
+            redis_key,
+            json.dumps(dataclasses.asdict(collectible_with_metadata)),
+            collectibles_service.COLLECTIBLE_EXPIRATION,
+        )
+    except MetadataRetrievalExceptionTimeout:
+        # Random avoid to run all tasks at the same time
+        if (
+            retry_get_metadata_task.request.retries
+            < retry_get_metadata_task.max_retries
+        ):
+            retry_get_metadata_task.retry(
+                countdown=int(
+                    random.uniform(55, 65) * retry_get_metadata_task.request.retries
+                )
+            )
+        else:
+            logger.debug(
+                "Timeout when getting metadata from %s after %i retries ",
+                collectible.uri,
+                retry_get_metadata_task.request.retries,
+            )
+        return None
     return collectible_with_metadata

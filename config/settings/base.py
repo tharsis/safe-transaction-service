@@ -44,6 +44,9 @@ FORCE_SCRIPT_NAME = env("FORCE_SCRIPT_NAME", default=None)
 # SSO
 SSO_ENABLED = False
 
+# Enable analytics endpoints
+ENABLE_ANALYTICS = env("ENABLE_ANALYTICS", default=False)
+
 # DATABASES
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
@@ -93,6 +96,7 @@ LOCAL_APPS = [
     "safe_transaction_service.contracts.apps.ContractsConfig",
     "safe_transaction_service.history.apps.HistoryConfig",
     "safe_transaction_service.notifications.apps.NotificationsConfig",
+    "safe_transaction_service.safe_messages.apps.SafeMessagesConfig",
     "safe_transaction_service.tokens.apps.TokensConfig",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
@@ -241,6 +245,7 @@ CELERY_ROUTES = (
         ("safe_transaction_service.contracts.tasks.*", {"queue": "contracts"}),
         ("safe_transaction_service.notifications.tasks.*", {"queue": "notifications"}),
         ("safe_transaction_service.tokens.tasks.*", {"queue": "tokens"}),
+        ("safe_transaction_service.analytics.tasks.*", {"queue": "contracts"}),
     ],
 )
 
@@ -400,6 +405,9 @@ ETH_EVENTS_UPDATED_BLOCK_BEHIND = env.int(
 ETH_REORG_BLOCKS = env.int(
     "ETH_REORG_BLOCKS", default=100 if ETH_L2_NETWORK else 10
 )  # Number of blocks from the current block number needed to consider a block valid/stable
+ETH_INTERNAL_TX_DECODED_PROCESS_BATCH = env.int(
+    "ETH_INTERNAL_TX_DECODED_PROCESS_BATCH", default=500
+)  # Number of InternalTxDecoded to process together
 
 # Tokens
 # ------------------------------------------------------------------------------

@@ -29,6 +29,7 @@ from gnosis.eth.oracles import (
     PoolTogetherOracle,
     PriceOracle,
     PricePoolOracle,
+    SuperfluidOracle,
     SushiswapOracle,
     UnderlyingToken,
     UniswapV2Oracle,
@@ -38,13 +39,7 @@ from gnosis.eth.oracles import (
 
 from safe_transaction_service.utils.redis import get_redis
 
-from ..clients import (
-    BinanceClient,
-    CannotGetPrice,
-    CoingeckoClient,
-    KrakenClient,
-    KucoinClient,
-)
+from ..clients import CannotGetPrice, CoingeckoClient, KrakenClient, KucoinClient
 from ..tasks import EthValueWithTimestamp, calculate_token_eth_price_task
 
 logger = get_task_logger(__name__)
@@ -79,7 +74,6 @@ class PriceService:
         self.ethereum_client = ethereum_client
         self.ethereum_network = self.ethereum_client.get_network()
         self.redis = redis
-        self.binance_client = BinanceClient()
         self.coingecko_client = CoingeckoClient(self.ethereum_network)
         self.kraken_client = KrakenClient()
         self.kucoin_client = KucoinClient()
@@ -110,8 +104,11 @@ class PriceService:
             )
             if Oracle.is_available(self.ethereum_client)
         )
-        if oracles and AaveOracle.is_available(self.ethereum_client):
-            oracles = oracles + (AaveOracle(self.ethereum_client, oracles[0]),)
+        if oracles:
+            if AaveOracle.is_available(self.ethereum_client):
+                oracles += (AaveOracle(self.ethereum_client, oracles[0]),)
+            if SuperfluidOracle.is_available(self.ethereum_client):
+                oracles += (SuperfluidOracle(self.ethereum_client, oracles[0]),)
 
         return oracles
 
@@ -148,19 +145,25 @@ class PriceService:
 
     def get_aurora_usd_price(self) -> float:
         try:
-            return self.binance_client.get_aurora_usd_price()
+            return self.kucoin_client.get_aurora_usd_price()
         except CannotGetPrice:
             return self.coingecko_client.get_aoa_usd_price()
 
     def get_cardano_usd_price(self) -> float:
-        return self.binance_client.get_ada_usd_price()
+        try:
+            return self.kraken_client.get_ada_usd_price()
+        except CannotGetPrice:
+            return self.coingecko_client.get_ada_usd_price()
+
+    def get_algorand_usd_price(self) -> float:
+        return self.kraken_client.get_algo_usd_price()
 
     def get_cardano_usd_price(self) -> float:
         return self.binance_client.get_ada_usd_price()
 
     def get_binance_usd_price(self) -> float:
         try:
-            return self.binance_client.get_bnb_usd_price()
+            return self.kucoin_client.get_bnb_usd_price()
         except CannotGetPrice:
             return self.coingecko_client.get_bnb_usd_price()
 
@@ -178,7 +181,7 @@ class PriceService:
             return self.kraken_client.get_matic_usd_price()
         except CannotGetPrice:
             try:
-                return self.binance_client.get_matic_usd_price()
+                return self.kucoin_client.get_matic_usd_price()
             except CannotGetPrice:
                 return self.coingecko_client.get_matic_usd_price()
     
@@ -193,6 +196,12 @@ class PriceService:
 
     def get_cronos_usd_price(self) -> float:
         return self.kucoin_client.get_cro_usd_price()
+
+    def get_kcs_usd_price(self) -> float:
+        try:
+            return self.kucoin_client.get_kcs_usd_price()
+        except CannotGetPrice:
+            return self.coingecko_client.get_kcs_usd_price()
 
     @cachedmethod(cache=operator.attrgetter("cache_eth_price"))
     @cache_memoize(60 * 30, prefix="balances-get_eth_usd_price")  # 30 minutes
@@ -250,11 +259,27 @@ class PriceService:
             EthereumNetwork.FUSE_SPARK,
         ):
             return self.coingecko_client.get_fuse_usd_price()
+        elif self.ethereum_network in (
+            EthereumNetwork.KCC_MAINNET,
+            EthereumNetwork.KCC_TESTNET,
+        ):
+            return self.get_kcs_usd_price()
+        elif self.ethereum_network in (
+            EthereumNetwork.METIS,
+            EthereumNetwork.METIS_TESTNET,
+            EthereumNetwork.METIS_GOERLI_TESTNET,
+        ):
+            return self.coingecko_client.get_metis_usd_price()
+        elif self.ethereum_network in (
+            EthereumNetwork.MILKOMEDA_A1_TESTNET,
+            EthereumNetwork.MILKOMEDA_A1_MAINNET,
+        ):
+            return self.get_algorand_usd_price()
         else:
             try:
                 return self.kraken_client.get_eth_usd_price()
             except CannotGetPrice:
-                return self.binance_client.get_eth_usd_price()
+                return self.kucoin_client.get_eth_usd_price()
 
     @cachedmethod(cache=operator.attrgetter("cache_token_eth_value"))
     @cache_memoize(60 * 30, prefix="balances-get_token_eth_value")  # 30 minutes
