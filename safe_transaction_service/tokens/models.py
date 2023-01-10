@@ -1,7 +1,7 @@
 import logging
 import os
 from typing import List, Optional
-from urllib.error import HTTPError
+from urllib import request
 from urllib.parse import urljoin
 
 from django.conf import settings
@@ -111,7 +111,7 @@ class TokenManager(models.Manager):
                 # Make sure ERC721 is not indexed as an ERC20 for a node misbehaving
                 try:
                     decimals = ethereum_client.erc20.get_decimals(token_address)
-                except (ValueError, DecodingError, BadFunctionCallOutput, HTTPError):
+                except (ValueError, DecodingError, BadFunctionCallOutput, request.exceptions.HTTPError):
                     decimals = None
             except InvalidERC721Info:
                 logger.debug(
