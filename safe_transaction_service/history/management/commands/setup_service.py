@@ -45,7 +45,7 @@ TASKS = [
     CeleryTaskConfiguration(
         "safe_transaction_service.history.tasks.check_reorgs_task",
         "Check Reorgs",
-        3,
+        1,
         IntervalSchedule.MINUTES,
     ),
     CeleryTaskConfiguration(
@@ -94,6 +94,12 @@ TASKS = [
         IntervalSchedule.MINUTES,
     ),
     CeleryTaskConfiguration(
+        "safe_transaction_service.history.tasks.remove_not_trusted_multisig_txs_task",
+        "Remove older than 1 month not trusted Multisig Txs",
+        1,
+        IntervalSchedule.DAYS,
+    ),
+    CeleryTaskConfiguration(
         "safe_transaction_service.contracts.tasks.create_missing_contracts_with_metadata_task",
         "Index contract names and ABIs",
         1,
@@ -116,6 +122,12 @@ TASKS = [
         "Fix Pool Token Names",
         1,
         IntervalSchedule.HOURS,
+    ),
+    CeleryTaskConfiguration(
+        "safe_transaction_service.tokens.tasks.update_token_info_from_token_list_task",
+        "Update Token info from token list",
+        1,
+        IntervalSchedule.DAYS,
     ),
     CeleryTaskConfiguration(
         "safe_transaction_service.analytics.tasks.get_transactions_per_safe_app_task",
@@ -164,7 +176,7 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0xb6029EA3B2c51D09a50B53CA8012FeEB05bDa35A", 10638132, "1.0.0"),
         ("0x8942595A2dC5181Df0465AF0D7be08c8f23C93af", 9465686, "0.1.0"),
     ],
-    EthereumNetwork.XDAI: [
+    EthereumNetwork.GNOSIS: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 16236936, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 16236998, "1.3.0"),
         ("0x6851D6fDFAfD08c0295C392436245E5bc78B0185", 10612049, "1.2.0"),
@@ -178,13 +190,13 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0x6851D6fDFAfD08c0295C392436245E5bc78B0185", 6398655, "1.2.0"),
         ("0x34CfAC646f301356fAa8B21e94227e3583Fe3F5F", 6399212, "1.1.1"),
     ],
-    EthereumNetwork.VOLTA: [
+    EthereumNetwork.ENERGY_WEB_VOLTA_TESTNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 11942450, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 11942451, "1.3.0"),
         ("0x6851D6fDFAfD08c0295C392436245E5bc78B0185", 6876086, "1.2.0"),
         ("0x34CfAC646f301356fAa8B21e94227e3583Fe3F5F", 6876642, "1.1.1"),
     ],
-    EthereumNetwork.MATIC: [
+    EthereumNetwork.POLYGON: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 14306478, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 14306478, "1.3.0"),
     ],
@@ -192,7 +204,7 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 13736914, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 13736914, "1.3.0"),
     ],
-    EthereumNetwork.ARBITRUM: [
+    EthereumNetwork.ARBITRUM_ONE: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 1146, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 1140, "1.3.0"),
     ],
@@ -200,7 +212,7 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 426, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 427, "1.3.0"),
     ],
-    EthereumNetwork.ARBITRUM_TESTNET: [
+    EthereumNetwork.ARBITRUM_RINKEBY: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 57070, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 57070, "1.3.0"),
     ],
@@ -208,51 +220,55 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 11545, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 11546, "1.3.0"),
     ],
-    EthereumNetwork.BINANCE: [
+    EthereumNetwork.BINANCE_SMART_CHAIN_MAINNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 8485899, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 8485903, "1.3.0"),
     ],
-    EthereumNetwork.CELO: [
+    EthereumNetwork.CELO_MAINNET: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 8944350, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 8944351, "1.3.0"),
     ],
-    EthereumNetwork.AVALANCHE: [
+    EthereumNetwork.AVALANCHE_C_CHAIN: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 4_949_507, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 4_949_512, "1.3.0"),
     ],
-    EthereumNetwork.MOON_MOONRIVER: [
+    EthereumNetwork.MOONRIVER: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 707_738, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 707_741, "1.3.0"),
+    ],
+    EthereumNetwork.MOONBASE_ALPHA: [
+        ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 939_244, "1.3.0+L2"),
+        ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 939_246, "1.3.0"),
     ],
     EthereumNetwork.FUSE_MAINNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 12_725_078, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 12_725_081, "1.3.0"),
     ],
-    EthereumNetwork.FUSE_SPARK: [
+    EthereumNetwork.FUSE_SPARKNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 1_010_518, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 1_010_520, "1.3.0"),
     ],
-    EthereumNetwork.OLYMPUS: [
+    EthereumNetwork.POLIS_MAINNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 1227, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 1278, "1.3.0"),
     ],
-    EthereumNetwork.OPTIMISTIC: [
+    EthereumNetwork.OPTIMISM: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 173749, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 173751, "1.3.0"),
     ],
-    EthereumNetwork.BOBA_RINKEBY: [
+    EthereumNetwork.BOBA_NETWORK_RINKEBY_TESTNET: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 18854, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 18855, "1.3.0"),
     ],
-    EthereumNetwork.BOBA: [
+    EthereumNetwork.BOBA_NETWORK: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 170908, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 170910, "1.3.0"),
     ],
-    EthereumNetwork.AURORA: [
+    EthereumNetwork.AURORA_MAINNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 52494580, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 52494580, "1.3.0"),
     ],
-    EthereumNetwork.METIS_TESTNET: [
+    EthereumNetwork.METIS_STARDUST_TESTNET: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 56124, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 56125, "1.3.0"),
     ],
@@ -260,33 +276,29 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 131845, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 131846, "1.3.0"),
     ],
-    EthereumNetwork.METIS: [
+    EthereumNetwork.METIS_ANDROMEDA_MAINNET: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 61767, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 61768, "1.3.0"),
     ],
-    EthereumNetwork.SHYFT: [
+    EthereumNetwork.SHYFT_MAINNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 1000, "1.3.0+L2"),  # v1.3.0
     ],
     EthereumNetwork.SHYFT_TESTNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 1984340, "1.3.0+L2"),  # v1.3.0
     ],
-    EthereumNetwork.REI_MAINNET: [
+    EthereumNetwork.REI_NETWORK: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 2388036, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 2388042, "1.3.0"),
-    ],
-    EthereumNetwork.REI_TESTNET: [
-        ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 748810, "1.3.0+L2"),
-        ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 748815, "1.3.0"),
     ],
     EthereumNetwork.EVMOS_TESTNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 70652, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 70654, "1.3.0"),
     ],
-    EthereumNetwork.EVMOS_MAINNET: [
+    EthereumNetwork.EVMOS: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 158463, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 158486, "1.3.0"),
     ],
-    EthereumNetwork.VENIDIUM: [
+    EthereumNetwork.VENIDIUM_MAINNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 1127191, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 1127192, "1.3.0"),
     ],
@@ -294,14 +306,14 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 761243, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 761244, "1.3.0"),
     ],
-    EthereumNetwork.GODWOKEN_TESTNET: [
+    EthereumNetwork.GODWOKEN_TESTNET_V1: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 93204, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 93168, "1.3.0"),
     ],
-    EthereumNetwork.KLAY_BAOBAB: [
+    EthereumNetwork.KLAYTN_TESTNET_BAOBAB: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 93821635, "1.3.0+L2"),
     ],
-    EthereumNetwork.KLAY_CYPRESS: [
+    EthereumNetwork.KLAYTN_MAINNET_CYPRESS: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 93507490, "1.3.0+L2"),
     ],
     EthereumNetwork.MILKOMEDA_A1_TESTNET: [
@@ -324,11 +336,11 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 3290833, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 3290835, "1.3.0"),
     ],
-    EthereumNetwork.CRONOS_MAINNET: [
+    EthereumNetwork.CRONOS_MAINNET_BETA: [
         ("0xfb1bffC9d739B8D520DaF37dF666da4C687191EA", 3002268, "1.3.0+L2"),
         ("0x69f4D1788e39c87893C980c06EdF4b7f686e2938", 3002760, "1.3.0"),
     ],
-    EthereumNetwork.RABBIT: [
+    EthereumNetwork.RABBIT_ANALOG_TESTNET_CHAIN: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 1434229, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 1434230, "1.3.0"),
     ],
@@ -351,6 +363,14 @@ MASTER_COPIES: Dict[EthereumNetwork, List[Tuple[str, int, str]]] = {
     EthereumNetwork.PUBLICMINT_TESTNET: [
         ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 14062206, "1.3.0+L2"),
         ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 14062208, "1.3.0"),
+    ],
+    EthereumNetwork.XINFIN_XDC_NETWORK: [
+        ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 53901616, "1.3.0+L2"),
+        ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 53901624, "1.3.0"),
+    ],
+    EthereumNetwork.XDC_APOTHEM_NETWORK: [
+        ("0x3E5c63644E683549055b9Be8653de26E0B4CD36E", 42293309, "1.3.0+L2"),
+        ("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552", 42293315, "1.3.0"),
     ],
 }
 
@@ -379,7 +399,7 @@ PROXY_FACTORIES: Dict[EthereumNetwork, List[Tuple[str, int]]] = {
         ("0x50e55Af101C777bA7A1d560a774A82eF002ced9F", 14740731),
         ("0x12302fE9c02ff50939BaAaaf415fc226C078613C", 10629898),
     ],
-    EthereumNetwork.XDAI: [
+    EthereumNetwork.GNOSIS: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 16236878),  # v1.3.0
         ("0x76E2cFc1F5Fa8F6a5b3fC4c8F4788F0116861F9B", 10045327),  # v1.1.1
         ("0x12302fE9c02ff50939BaAaaf415fc226C078613C", 17677119),  # v1.0.0
@@ -388,101 +408,110 @@ PROXY_FACTORIES: Dict[EthereumNetwork, List[Tuple[str, int]]] = {
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 12028652),  # v1.3.0
         ("0x76E2cFc1F5Fa8F6a5b3fC4c8F4788F0116861F9B", 6399239),
     ],
-    EthereumNetwork.VOLTA: [
+    EthereumNetwork.ENERGY_WEB_VOLTA_TESTNET: [
         # ('0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2', 0),  # v1.3.0
         ("0x76E2cFc1F5Fa8F6a5b3fC4c8F4788F0116861F9B", 6876681),
     ],
-    EthereumNetwork.MATIC: [
+    EthereumNetwork.POLYGON: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 14306478),  # v1.3.0
     ],
     EthereumNetwork.MUMBAI: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 13736914),  # v1.3.0
     ],
-    EthereumNetwork.ARBITRUM: [
+    EthereumNetwork.ARBITRUM_ONE: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 1140),  # v1.3.0
     ],
     EthereumNetwork.ARBITRUM_NOVA: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 419),  # v1.3.0
     ],
-    EthereumNetwork.ARBITRUM_TESTNET: [
+    EthereumNetwork.ARBITRUM_RINKEBY: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 57070),  # v1.3.0
     ],
     EthereumNetwork.ARBITRUM_GOERLI: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 11538),  # v1.3.0
     ],
-    EthereumNetwork.BINANCE: [
+    EthereumNetwork.BINANCE_SMART_CHAIN_MAINNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 8485873),  # v1.3.0
     ],
-    EthereumNetwork.CELO: [
+    EthereumNetwork.CELO_MAINNET: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 8944342),  # v1.3.0
     ],
-    EthereumNetwork.AVALANCHE: [
+    EthereumNetwork.AVALANCHE_C_CHAIN: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 4_949_487),  # v1.3.0
     ],
-    EthereumNetwork.MOON_MOONRIVER: [
+    EthereumNetwork.MOONRIVER: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 707_721),  # v1.3.0
+    ],
+    EthereumNetwork.MOONBASE_ALPHA: [
+        ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 939_239),  # v1.3.0
     ],
     EthereumNetwork.FUSE_MAINNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 12_725_072),  # v1.3.0
     ],
-    EthereumNetwork.FUSE_SPARK: [
+    EthereumNetwork.FUSE_SPARKNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 1_010_506),  # v1.3.0
     ],
-    EthereumNetwork.OLYMPUS: [
+    EthereumNetwork.POLIS_MAINNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 1266),  # v1.3.0
     ],
-    EthereumNetwork.OPTIMISTIC: [
+    EthereumNetwork.OPTIMISM: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 173709),  # v1.3.0
     ],
-    EthereumNetwork.BOBA_RINKEBY: [
+    EthereumNetwork.BOBA_NETWORK_RINKEBY_TESTNET: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 18847),  # v1.3.0
     ],
-    EthereumNetwork.BOBA: [
+    EthereumNetwork.BOBA_NETWORK: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 170895),  # v1.3.0
     ],
-    EthereumNetwork.AURORA: [
+    EthereumNetwork.AURORA_MAINNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 52494580),  # v1.3.0
     ],
-    EthereumNetwork.METIS_TESTNET: [
+    EthereumNetwork.METIS_STARDUST_TESTNET: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 56117),  # v1.3.0
     ],
     EthereumNetwork.METIS_GOERLI_TESTNET: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 131842),  # v1.3.0
     ],
-    EthereumNetwork.METIS: [
+    EthereumNetwork.METIS_ANDROMEDA_MAINNET: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 61758),  # v1.3.0
     ],
-    EthereumNetwork.SHYFT: [
+    EthereumNetwork.SHYFT_MAINNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 2000),  # v1.3.0
     ],
     EthereumNetwork.SHYFT_TESTNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 1984340),  # v1.3.0
     ],
-    EthereumNetwork.REI_MAINNET: [
+    EthereumNetwork.REI_NETWORK: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 2387999),  # v1.3.0
-    ],
-    EthereumNetwork.REI_TESTNET: [
-        ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 748768),  # v1.3.0
     ],
     EthereumNetwork.EVMOS_TESTNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 70637),  # v1.3.0
     ],
-    EthereumNetwork.EVMOS_MAINNET: [
+    EthereumNetwork.EVMOS: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 146858),  # v1.3.0
     ],
-    EthereumNetwork.VENIDIUM: [
+    EthereumNetwork.METER_TESTNET: [
+        ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 15035363),  # v1.3.0
+    ],
+    EthereumNetwork.EURUS_MAINNET: [
+        ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 7127155),  # v1.3.0
+    ],
+    EthereumNetwork.EURUS_TESTNET: [
+        ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 12845425),  # v1.3.0
+    ],
+    EthereumNetwork.VENIDIUM_MAINNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 1127130),  # v1.3.0
     ],
     EthereumNetwork.VENIDIUM_TESTNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 761231),  # v1.3.0
     ],
-    EthereumNetwork.GODWOKEN_TESTNET: [
+    EthereumNetwork.GODWOKEN_TESTNET_V1: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 93108),  # v1.3.0
     ],
-    EthereumNetwork.KLAY_BAOBAB: [
+    EthereumNetwork.KLAYTN_TESTNET_BAOBAB: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 93821613),  # v1.3.0
     ],
-    EthereumNetwork.KLAY_CYPRESS: [
+    EthereumNetwork.KLAYTN_MAINNET_CYPRESS: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 93506870),  # v1.3.0
     ],
     EthereumNetwork.MILKOMEDA_A1_TESTNET: [
@@ -500,10 +529,10 @@ PROXY_FACTORIES: Dict[EthereumNetwork, List[Tuple[str, int]]] = {
     EthereumNetwork.CRONOS_TESTNET: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 3290819),  # v1.3.0
     ],
-    EthereumNetwork.CRONOS_MAINNET: [
+    EthereumNetwork.CRONOS_MAINNET_BETA: [
         ("0xC22834581EbC8527d974F8a1c97E1bEA4EF910BC", 2958469),  # v1.3.0
     ],
-    EthereumNetwork.RABBIT: [
+    EthereumNetwork.RABBIT_ANALOG_TESTNET_CHAIN: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 1434222),  # v1.3.0
     ],
     EthereumNetwork.CLOUDWALK_TESTNET: [
@@ -520,6 +549,12 @@ PROXY_FACTORIES: Dict[EthereumNetwork, List[Tuple[str, int]]] = {
     ],
     EthereumNetwork.PUBLICMINT_TESTNET: [
         ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 14062193),  # v1.3.0
+    ],
+    EthereumNetwork.XINFIN_XDC_NETWORK: [
+        ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 53901564),  # v1.3.0
+    ],
+    EthereumNetwork.XDC_APOTHEM_NETWORK: [
+        ("0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2", 42293264),  # v1.3.0
     ],
 }
 

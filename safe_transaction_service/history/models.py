@@ -176,6 +176,18 @@ class IndexingStatus(models.Model):
     block_number = models.PositiveIntegerField(db_index=True)
 
 
+class Chain(models.Model):
+    """
+    This model keeps track of the chainId used to configure the service, to prevent issues if a wrong ethereum
+    RPC is configured later
+    """
+
+    chain_id = models.BigIntegerField(primary_key=True)
+
+    def __str__(self):
+        return f"ChainId {self.chain_id}"
+
+
 class EthereumBlockManager(models.Manager):
     def get_or_create_from_block(self, block: Dict[str, Any], confirmed: bool = False):
         try:
@@ -261,7 +273,16 @@ class EthereumBlock(models.Model):
     block_hash = Keccak256Field(unique=True)
     parent_hash = Keccak256Field(unique=True)
     # For reorgs, True if `current_block_number` - `number` >= MIN_CONFIRMATIONS
-    confirmed = models.BooleanField(default=False, db_index=True)
+    confirmed = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [
+            Index(
+                name="history_block_confirmed_idx",
+                fields=["confirmed"],
+                condition=Q(confirmed=False),
+            ),
+        ]
 
     def __str__(self):
         return f"Block number={self.number} on {self.timestamp}"
@@ -844,7 +865,9 @@ class InternalTx(models.Model):
     )  # For SELF-DESTRUCT it can be null
     gas = Uint256Field()
     data = models.BinaryField(null=True)  # `input` for Call, `init` for Create
-    to = EthereumAddressV2Field(null=True)
+    to = EthereumAddressV2Field(
+        null=True
+    )  # Already exists a multicolumn index for field
     value = Uint256Field()
     gas_used = Uint256Field()
     contract_address = EthereumAddressV2Field(null=True, db_index=True)  # Create
@@ -1196,6 +1219,9 @@ class MultisigTransactionQuerySet(models.QuerySet):
 
     def trusted(self):
         return self.filter(trusted=True)
+
+    def not_trusted(self):
+        return self.filter(trusted=False)
 
     def multisend(self):
         # TODO Use MultiSend.MULTISEND_ADDRESSES + MultiSend MULTISEND_CALL_ONLY_ADDRESSES

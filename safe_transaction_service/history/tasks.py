@@ -1,5 +1,6 @@
 import contextlib
 import dataclasses
+import datetime
 import json
 import random
 from functools import cache
@@ -7,6 +8,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 from django.conf import settings
+from django.utils import timezone
 
 import requests
 from celery import app
@@ -29,6 +31,7 @@ from .indexers.tx_processor import SafeTxProcessor, SafeTxProcessorProvider
 from .models import (
     EthereumBlock,
     InternalTxDecoded,
+    MultisigTransaction,
     SafeLastStatus,
     SafeStatus,
     WebHook,
@@ -54,20 +57,18 @@ logger = get_task_logger(__name__)
 @app.shared_task(bind=True, soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
 def check_reorgs_task(self) -> Optional[int]:
     """
-    :return: Number of oldest block with reorg detected. `None` if not reorg found
+    :return: Number of the oldest block with reorg detected. `None` if not reorg found
     """
     with contextlib.suppress(LockError):
         with only_one_running_task(self):
             logger.info("Start checking of reorgs")
             reorg_service: ReorgService = ReorgServiceProvider()
-            first_reorg_block_number = reorg_service.check_reorgs()
-            if first_reorg_block_number:
-                logger.warning(
-                    "Reorg found for block-number=%d", first_reorg_block_number
-                )
+            reorg_block_number = reorg_service.check_reorgs()
+            if reorg_block_number:
+                logger.warning("Reorg found for block-number=%d", reorg_block_number)
                 # Stopping running tasks is not possible with gevent
-                reorg_service.recover_from_reorg(first_reorg_block_number)
-                return first_reorg_block_number
+                reorg_service.recover_from_reorg(reorg_block_number)
+                return reorg_block_number
 
 
 @app.shared_task(soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
@@ -580,3 +581,17 @@ def retry_get_metadata_task(
             )
         return None
     return collectible_with_metadata
+
+
+@app.shared_task()
+@close_gevent_db_connection_decorator
+def remove_not_trusted_multisig_txs_task(
+    time_delta: datetime.timedelta = datetime.timedelta(days=30),
+) -> int:
+    logger.info("Deleting Multisig Transactions older than %s", time_delta)
+    deleted, _ = (
+        MultisigTransaction.objects.not_trusted()
+        .filter(modified__lt=timezone.now() - time_delta)
+        .delete()
+    )
+    return deleted
