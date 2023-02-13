@@ -36,7 +36,7 @@ class CoingeckoClient:
             self.asset_platform = "optimistic-ethereum"
         elif network == EthereumNetwork.GNOSIS:
             self.asset_platform = "xdai"
-        elif network == EthereumNetwork.EVMOS_MAINNET:
+        elif network == EthereumNetwork.EVMOS:
             self.asset_platform = "evmos"
         elif network == EthereumNetwork.FUSE_MAINNET:
             self.asset_platform = "fuse"

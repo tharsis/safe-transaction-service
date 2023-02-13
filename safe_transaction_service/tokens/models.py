@@ -3,6 +3,7 @@ import os
 from json import JSONDecodeError
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
+from urllib import request
 
 from django.conf import settings
 from django.core.exceptions import ValidationError

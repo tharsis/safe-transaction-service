@@ -246,7 +246,7 @@ class PriceService:
             EthereumNetwork.ARBITRUM_RINKEBY,
         ):
             return self.get_aurora_usd_price()
-        elif self.ethereum_network in (EthereumNetwork.EVMOS_MAINNET, EthereumNetwork.EVMOS_TESTNET):
+        elif self.ethereum_network in (EthereumNetwork.EVMOS, EthereumNetwork.EVMOS_TESTNET):
             return self.get_evmos_usd_price()
         elif self.ethereum_network in (
             EthereumNetwork.CRONOS_TESTNET,
