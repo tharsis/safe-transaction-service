@@ -1,7 +1,9 @@
 import logging
 import os
-from typing import List, Optional
+from json import JSONDecodeError
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
+from urllib import request
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -9,6 +11,7 @@ from django.core.files.storage import default_storage
 from django.db import models
 from django.db.models import Q
 
+import requests
 from botocore.exceptions import ClientError
 from eth_abi.exceptions import DecodingError
 from eth_typing import ChecksumAddress
@@ -25,6 +28,7 @@ from .clients.zerion_client import (
     ZerionUniswapV2TokenAdapterClient,
 )
 from .constants import ENS_CONTRACTS_WITH_TLD
+from .exceptions import TokenListRetrievalException
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +114,7 @@ class TokenManager(models.Manager):
                 # Make sure ERC721 is not indexed as an ERC20 for a node misbehaving
                 try:
                     decimals = ethereum_client.erc20.get_decimals(token_address)
-                except (ValueError, DecodingError, BadFunctionCallOutput):
+                except (ValueError, DecodingError, BadFunctionCallOutput, request.exceptions.HTTPError):
                     decimals = None
             except InvalidERC721Info:
                 logger.debug(
@@ -297,3 +301,40 @@ class Token(models.Model):
         :return: Address to use to retrieve the token price
         """
         return self.copy_price or self.address
+
+
+class TokenList(models.Model):
+    url = models.URLField(unique=True)
+    description = models.CharField(max_length=200)
+
+    def __str__(self):
+        return f"{self.description} token list"
+
+    def get_tokens(self) -> List[Dict[str, Any]]:
+        try:
+            response = requests.get(self.url)
+            if response.ok:
+                tokens = response.json().get("tokens", [])
+                if not tokens:
+                    logger.error("Empty token list from %s", self.url)
+                return tokens
+            else:
+                logger.error(
+                    "%d - %s when retrieving token list %s",
+                    response.status_code,
+                    response.content,
+                    self.url,
+                )
+                raise TokenListRetrievalException(
+                    f"{response.status_code} when retrieving token list {self.url}"
+                )
+        except IOError:
+            logger.error("Problem retrieving token list %s", self.url)
+            raise TokenListRetrievalException(
+                f"Problem retrieving token list {self.url}"
+            )
+        except JSONDecodeError:
+            logger.error("Invalid JSON from token list %s", self.url)
+            raise TokenListRetrievalException(
+                f"Invalid JSON from token list {self.url}"
+            )
