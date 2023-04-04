@@ -31,5 +31,5 @@ psycogreen==1.0.2
 psycopg2==2.9.5
 redis==4.5.1
 requests==2.28.2
-safe-eth-py[django]==5.1.0
+git+https://github.com/protofire/safe-eth-py.git@evmos#egg=safe-eth-py[django]
 web3==5.31.3
