@@ -2,7 +2,7 @@ from functools import cached_property
 from logging import getLogger
 from typing import List, Optional, Sequence
 
-from web3.contract import ContractEvent
+from web3.contract.contract import ContractEvent
 from web3.types import EventData, LogReceipt
 
 from gnosis.eth import EthereumClient
@@ -21,13 +21,15 @@ logger = getLogger(__name__)
 class ProxyFactoryIndexerProvider:
     def __new__(cls):
         if not hasattr(cls, "instance"):
-            from django.conf import settings
-
-            cls.instance = ProxyFactoryIndexer(
-                EthereumClient(settings.ETHEREUM_NODE_URL)
-            )
+            cls.instance = cls.get_new_instance()
 
         return cls.instance
+
+    @classmethod
+    def get_new_instance(cls) -> "ProxyFactoryIndexer":
+        from django.conf import settings
+
+        return ProxyFactoryIndexer(EthereumClient(settings.ETHEREUM_NODE_URL))
 
     @classmethod
     def del_singleton(cls):

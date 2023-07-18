@@ -24,6 +24,7 @@ from ..models import (
     EthereumBlockManager,
     EthereumTx,
     EthereumTxCallType,
+    IndexingStatus,
     InternalTx,
     InternalTxDecoded,
     MultisigConfirmation,
@@ -39,6 +40,7 @@ from .factories import (
     ERC721TransferFactory,
     EthereumBlockFactory,
     EthereumTxFactory,
+    IndexingStatusFactory,
     InternalTxDecodedFactory,
     InternalTxFactory,
     MultisigConfirmationFactory,
@@ -138,6 +140,45 @@ class TestModelMixins(TestCase):
                 another_generator, batch_size=2
             ),
             number,
+        )
+
+
+class TestIndexingStatus(TestCase):
+    def test_indexing_status(self):
+        indexing_status = IndexingStatus.objects.get()
+        self.assertEqual(str(indexing_status), "ERC20_721_EVENTS - 0")
+
+        with self.assertRaises(IntegrityError):
+            # IndexingStatus should be inserted with a migration and `indexing_type` is unique
+            IndexingStatusFactory(indexing_type=0)
+
+    def test_set_erc20_721_indexing_status(self):
+        self.assertTrue(IndexingStatus.objects.set_erc20_721_indexing_status(5))
+        self.assertEqual(
+            IndexingStatus.objects.get_erc20_721_indexing_status().block_number, 5
+        )
+
+        self.assertTrue(IndexingStatus.objects.set_erc20_721_indexing_status(2))
+        self.assertEqual(
+            IndexingStatus.objects.get_erc20_721_indexing_status().block_number, 2
+        )
+
+        self.assertTrue(
+            IndexingStatus.objects.set_erc20_721_indexing_status(
+                10, from_block_number=2
+            )
+        )
+        self.assertEqual(
+            IndexingStatus.objects.get_erc20_721_indexing_status().block_number, 10
+        )
+
+        self.assertFalse(
+            IndexingStatus.objects.set_erc20_721_indexing_status(
+                20, from_block_number=11
+            )
+        )
+        self.assertEqual(
+            IndexingStatus.objects.get_erc20_721_indexing_status().block_number, 10
         )
 
 
@@ -289,7 +330,7 @@ class TestEthereumTx(TestCase):
             with self.subTest(tx_mock=tx_mock):
                 tx_dict = tx_mock["tx"]
                 ethereum_tx = EthereumTx.objects.create_from_tx_dict(tx_dict)
-                self.assertEqual(ethereum_tx.type, int(tx_dict["type"], 0))
+                self.assertEqual(ethereum_tx.type, tx_dict["type"], 0)
                 self.assertEqual(ethereum_tx.gas_price, tx_dict["gasPrice"])
                 self.assertEqual(
                     ethereum_tx.max_fee_per_gas, tx_dict.get("maxFeePerGas")

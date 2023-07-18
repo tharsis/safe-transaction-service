@@ -30,7 +30,8 @@ from ..tasks import logger as task_logger
 from ..tasks import (
     process_decoded_internal_txs_for_safe_task,
     process_decoded_internal_txs_task,
-    reindex_last_hours_task,
+    reindex_erc20_erc721_last_hours_task,
+    reindex_mastercopies_last_hours_task,
     remove_not_trusted_multisig_txs_task,
     retry_get_metadata_task,
 )
@@ -84,17 +85,16 @@ class TestTasks(TestCase):
     def test_index_safe_events_task(self):
         self.assertEqual(index_safe_events_task.delay().result, (0, 0))
 
-    @patch.object(IndexService, "reindex_erc20_events")
     @patch.object(IndexService, "reindex_master_copies")
-    def test_reindex_last_hours_task(
-        self, reindex_master_copies_mock: MagicMock, reindex_erc20_events: MagicMock
+    def test_reindex_mastercopies_last_hours_task(
+        self, reindex_master_copies_mock: MagicMock
     ):
         now = timezone.now()
         one_hour_ago = now - datetime.timedelta(hours=1)
         one_day_ago = now - datetime.timedelta(days=1)
         one_week_ago = now - datetime.timedelta(weeks=1)
 
-        reindex_last_hours_task()
+        reindex_mastercopies_last_hours_task()
         reindex_master_copies_mock.assert_not_called()
 
         ethereum_block_0 = EthereumBlockFactory(timestamp=one_week_ago)
@@ -102,14 +102,35 @@ class TestTasks(TestCase):
         ethereum_block_2 = EthereumBlockFactory(timestamp=one_hour_ago)
         ethereum_block_3 = EthereumBlockFactory(timestamp=now)
 
-        reindex_last_hours_task()
+        reindex_mastercopies_last_hours_task()
         reindex_master_copies_mock.assert_called_once_with(
-            from_block_number=ethereum_block_1.number,
+            ethereum_block_1.number,
             to_block_number=ethereum_block_3.number,
+            addresses=None,
         )
+
+    @patch.object(IndexService, "reindex_erc20_events")
+    def test_reindex_erc20_erc721_last_hours_task(
+        self, reindex_erc20_events: MagicMock
+    ):
+        now = timezone.now()
+        one_hour_ago = now - datetime.timedelta(hours=1)
+        one_day_ago = now - datetime.timedelta(days=1)
+        one_week_ago = now - datetime.timedelta(weeks=1)
+
+        reindex_erc20_erc721_last_hours_task()
+        reindex_erc20_events.assert_not_called()
+
+        ethereum_block_0 = EthereumBlockFactory(timestamp=one_week_ago)
+        ethereum_block_1 = EthereumBlockFactory(timestamp=one_day_ago)
+        ethereum_block_2 = EthereumBlockFactory(timestamp=one_hour_ago)
+        ethereum_block_3 = EthereumBlockFactory(timestamp=now)
+
+        reindex_erc20_erc721_last_hours_task()
         reindex_erc20_events.assert_called_once_with(
-            from_block_number=ethereum_block_1.number,
+            ethereum_block_1.number,
             to_block_number=ethereum_block_3.number,
+            addresses=None,
         )
 
     @patch.object(EthereumClient, "get_network", return_value=EthereumNetwork.GANACHE)
@@ -160,6 +181,25 @@ class TestTasks(TestCase):
         self.assertEqual(safe_status.owners, [owner])
         self.assertEqual(safe_status.threshold, threshold)
 
+    def test_process_decoded_internal_txs_for_banned_safe(self):
+        owner = Account.create().address
+        safe_address = Account.create().address
+        fallback_handler = Account.create().address
+        master_copy = Account.create().address
+        threshold = 1
+        InternalTxDecodedFactory(
+            function_name="setup",
+            owner=owner,
+            threshold=threshold,
+            fallback_handler=fallback_handler,
+            internal_tx__to=master_copy,
+            internal_tx___from=safe_address,
+        )
+        SafeContractFactory(address=safe_address, banned=True)
+        self.assertTrue(SafeContract.objects.get(address=safe_address).banned)
+        process_decoded_internal_txs_task.delay()
+        self.assertEqual(SafeStatus.objects.filter(address=safe_address).count(), 0)
+
     def test_process_decoded_internal_txs_for_safe_task(self):
         # Test corrupted SafeStatus
         safe_status_0 = SafeStatusFactory(nonce=0)
@@ -173,8 +213,9 @@ class TestTasks(TestCase):
                     process_decoded_internal_txs_for_safe_task.delay(safe_address)
                     reprocess_mock.assert_called_with([safe_address])
                     reindex_mock.assert_called_with(
-                        from_block_number=safe_status_0.block_number,
+                        safe_status_0.block_number,
                         to_block_number=safe_status_5.block_number,
+                        addresses=[safe_address],
                     )
                     self.assertIn(
                         f"Safe-address={safe_address} A problem was found in SafeStatus "
@@ -193,7 +234,7 @@ class TestTasks(TestCase):
                     )
                     self.assertIn(
                         f"Reindexing master copies from-block={safe_status_0.internal_tx.ethereum_tx.block_id} "
-                        f"to-block={safe_status_5.block_number}",
+                        f"to-block={safe_status_5.block_number} addresses={[safe_address]}",
                         cm.output[4],
                     )
                     self.assertIn(

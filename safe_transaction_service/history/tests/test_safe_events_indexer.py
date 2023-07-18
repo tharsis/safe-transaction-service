@@ -611,7 +611,7 @@ class TestSafeEventsIndexer(SafeTestCaseMixin, TestCase):
             InternalTxDecoded.objects.count(), expected_internal_txs_decoded
         )
 
-    def test_mark_as_processed(self):
+    def test_element_already_processed_checker(self):
         # SafeEventsIndexer does not use bulk saving into database,
         # so mark_as_processed is just a optimization but not critical
 
@@ -623,11 +623,14 @@ class TestSafeEventsIndexer(SafeTestCaseMixin, TestCase):
                 EthereumTxFactory(tx_hash=tx_hash, block__block_hash=block_hash)
 
         # After the first processing transactions will be cached to prevent reprocessing
-        self.assertEqual(len(self.safe_events_indexer._processed_element_cache), 0)
+        processed_element_cache = (
+            self.safe_events_indexer.element_already_processed_checker._processed_element_cache
+        )
+        self.assertEqual(len(processed_element_cache), 0)
         self.assertEqual(
             len(self.safe_events_indexer.process_elements(safe_events_mock)), 28
         )
-        self.assertEqual(len(self.safe_events_indexer._processed_element_cache), 28)
+        self.assertEqual(len(processed_element_cache), 28)
 
         # Transactions are cached and will not be reprocessed
         self.assertEqual(
@@ -638,7 +641,28 @@ class TestSafeEventsIndexer(SafeTestCaseMixin, TestCase):
         )
 
         # Even if we empty the cache, events will not be reprocessed again
-        self.safe_events_indexer._processed_element_cache.clear()
+        self.safe_events_indexer.element_already_processed_checker.clear()
         self.assertEqual(
             len(self.safe_events_indexer.process_elements(safe_events_mock)), 0
         )
+
+    def test_auto_adjust_block_limit(self):
+        self.safe_events_indexer.block_process_limit = 1
+        self.safe_events_indexer.block_process_limit_max = 5
+        with self.safe_events_indexer.auto_adjust_block_limit(100, 100):
+            pass
+
+        self.assertEqual(self.safe_events_indexer.block_process_limit, 2)
+
+        with self.safe_events_indexer.auto_adjust_block_limit(100, 101):
+            pass
+        self.assertEqual(self.safe_events_indexer.block_process_limit, 4)
+
+        # Check it cannot go further than `block_process_limit_max`
+        with self.safe_events_indexer.auto_adjust_block_limit(100, 103):
+            pass
+        self.assertEqual(self.safe_events_indexer.block_process_limit, 5)
+
+        with self.safe_events_indexer.auto_adjust_block_limit(100, 104):
+            pass
+        self.assertEqual(self.safe_events_indexer.block_process_limit, 5)

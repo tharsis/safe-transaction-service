@@ -5,7 +5,7 @@ from typing import Iterator, List, Optional, Sequence
 from django.db.models import QuerySet
 
 from eth_typing import ChecksumAddress
-from web3.contract import ContractEvent
+from web3.contract.contract import ContractEvent
 from web3.types import EventData, LogReceipt
 
 from gnosis.eth import EthereumClient
@@ -27,12 +27,14 @@ logger = getLogger(__name__)
 class Erc20EventsIndexerProvider:
     def __new__(cls):
         if not hasattr(cls, "instance"):
-            from django.conf import settings
-
-            cls.instance = Erc20EventsIndexer(
-                EthereumClient(settings.ETHEREUM_NODE_URL)
-            )
+            cls.instance = cls.get_new_instance()
         return cls.instance
+
+    @classmethod
+    def get_new_instance(cls) -> "Erc20EventsIndexer":
+        from django.conf import settings
+
+        return Erc20EventsIndexer(EthereumClient(settings.ETHEREUM_NODE_URL))
 
     @classmethod
     def del_singleton(cls):
@@ -100,15 +102,24 @@ class Erc20EventsIndexer(EventsIndexer):
             )
 
         if parameter_addresses:
-            return transfer_events
+            return [
+                transfer_event
+                for transfer_event in transfer_events
+                if transfer_event["blockHash"]
+                != transfer_event["transactionHash"]  # CELO ERC20 indexing
+            ]
 
         # Every ERC20/721 event is returned, we need to filter ourselves
         addresses_set = set(addresses)
         return [
             transfer_event
             for transfer_event in transfer_events
-            if transfer_event["args"]["to"] in addresses_set
-            or transfer_event["args"]["from"] in addresses_set
+            if transfer_event["blockHash"]
+            != transfer_event["transactionHash"]  # CELO ERC20 indexing
+            and (
+                transfer_event["args"]["to"] in addresses_set
+                or transfer_event["args"]["from"] in addresses_set
+            )
         ]
 
     def _process_decoded_element(self, decoded_element: EventData) -> None:
@@ -161,7 +172,11 @@ class Erc20EventsIndexer(EventsIndexer):
             not_processed_log_receipts = [
                 log_receipt
                 for log_receipt in log_receipts
-                if self.mark_as_processed(log_receipt)
+                if not self.element_already_processed_checker.is_processed(
+                    log_receipt["transactionHash"],
+                    log_receipt["blockHash"],
+                    log_receipt["logIndex"],
+                )
             ]
             result_erc20 = ERC20Transfer.objects.bulk_create_from_generator(
                 self.events_to_erc20_transfer(not_processed_log_receipts),
@@ -172,6 +187,14 @@ class Erc20EventsIndexer(EventsIndexer):
                 ignore_conflicts=True,
             )
             logger.debug("Stored TokenTransfer objects")
+            logger.debug("Marking events as processed")
+            for log_receipt in not_processed_log_receipts:
+                self.element_already_processed_checker.mark_as_processed(
+                    log_receipt["transactionHash"],
+                    log_receipt["blockHash"],
+                    log_receipt["logIndex"],
+                )
+            logger.debug("Marked events as processed")
             return range(
                 result_erc20 + result_erc721
             )  # TODO Hack to prevent returning `TokenTransfer` and using too much RAM
@@ -206,9 +229,19 @@ class Erc20EventsIndexer(EventsIndexer):
     ) -> Optional[int]:
         return IndexingStatus.objects.get_erc20_721_indexing_status().block_number
 
-    def update_monitored_address(
+    def update_monitored_addresses(
         self, addresses: Sequence[str], from_block_number: int, to_block_number: int
-    ) -> int:
-        return int(
-            IndexingStatus.objects.set_erc20_721_indexing_status(to_block_number + 1)
+    ) -> bool:
+        # Keep indexing going on the next block
+        new_to_block_number = to_block_number + 1
+        updated = IndexingStatus.objects.set_erc20_721_indexing_status(
+            new_to_block_number, from_block_number=from_block_number
         )
+        if not updated:
+            logger.warning(
+                "%s: Possible reorg - Cannot update erc20_721 indexing status from-block-number=%d to-block-number=%d",
+                self.__class__.__name__,
+                from_block_number,
+                to_block_number,
+            )
+        return updated
