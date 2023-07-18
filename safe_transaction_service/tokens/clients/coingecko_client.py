@@ -138,7 +138,7 @@ class CoingeckoClient(BaseHTTPClient):
 
     def get_gather_usd_price(self) -> float:
         return self.get_price("gather")
-
+    
     def get_evmos_usd_price(self) -> float:
         return self.get_price("evmos")
 
