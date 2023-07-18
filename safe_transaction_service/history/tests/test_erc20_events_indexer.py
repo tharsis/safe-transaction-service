@@ -45,9 +45,6 @@ class TestErc20EventsIndexer(EthereumTestCaseMixin, TestCase):
             IndexingStatus.objects.get_erc20_721_indexing_status().block_number, 0
         )
 
-        # Erc20 block number are not stored on SafeContract anymore
-        self.assertEqual(safe_contract.erc20_block_number, 0)
-
         self.assertEqual(
             IndexingStatus.objects.get_erc20_721_indexing_status().block_number,
             self.ethereum_client.current_block_number
