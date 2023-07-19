@@ -10,12 +10,13 @@ from eth_typing import ChecksumAddress
 from eth_utils import event_abi_to_log_topic
 from gevent import pool
 from hexbytes import HexBytes
-from web3.contract import ContractEvent
+from web3.contract.contract import ContractEvent
 from web3.exceptions import LogTopicError
 from web3.types import EventData, FilterParams, LogReceipt
 
-from safe_transaction_service.utils.utils import FixedSizeDict, chunks
+from safe_transaction_service.utils.utils import chunks
 
+from .element_already_processed_checker import ElementAlreadyProcessedChecker
 from .ethereum_indexer import EthereumIndexer, FindRelevantElementsException
 
 logger = getLogger(__name__)
@@ -40,8 +41,8 @@ class EventsIndexer(EthereumIndexer):
             "block_process_limit_max", settings.ETH_EVENTS_BLOCK_PROCESS_LIMIT_MAX
         )
         kwargs.setdefault(
-            "blocks_to_reindex_again", 10
-        )  # Reindex last 10 blocks every run of the indexer
+            "blocks_to_reindex_again", settings.ETH_EVENTS_BLOCKS_TO_REINDEX_AGAIN
+        )  # Reindex last blocks every run of the indexer
         kwargs.setdefault(
             "query_chunk_size", settings.ETH_EVENTS_QUERY_CHUNK_SIZE
         )  # Number of elements to process together when calling `eth_getLogs`
@@ -51,56 +52,31 @@ class EventsIndexer(EthereumIndexer):
 
         # Number of concurrent requests to `getLogs`
         self.get_logs_concurrency = settings.ETH_EVENTS_GET_LOGS_CONCURRENCY
-        self._processed_element_cache = FixedSizeDict(maxlen=40_000)  # Around 3MiB
+        self.element_already_processed_checker = ElementAlreadyProcessedChecker()
 
         super().__init__(*args, **kwargs)
-
-    def mark_as_processed(self, log_receipt: LogReceipt) -> bool:
-        """
-        Mark event as processed by the indexer
-
-        :param log_receipt:
-        :return: `True` if `event` was marked as processed, `False` if it was already processed
-        """
-
-        # Calculate id, collision should be almost impossible
-        # Add blockHash to prevent reorg issues
-        block_hash = HexBytes(log_receipt["blockHash"])
-        tx_hash = HexBytes(log_receipt["transactionHash"])
-        log_index = log_receipt["logIndex"]
-        event_id = block_hash + tx_hash + HexBytes(log_index)
-
-        if event_id in self._processed_element_cache:
-            logger.debug(
-                "Event with tx-hash=%s log-index=%d on block=%s was already processed",
-                tx_hash.hex(),
-                log_index,
-                block_hash.hex(),
-            )
-            return False
-        else:
-            logger.debug(
-                "Marking event with tx-hash=%s log-index=%d on block=%s as processed",
-                tx_hash.hex(),
-                log_index,
-                block_hash.hex(),
-            )
-            self._processed_element_cache[event_id] = None
-            return True
 
     @property
     @abstractmethod
     def contract_events(self) -> List[ContractEvent]:
         """
-        :return: Web3 ContractEvent to listen to
+        :return: List of Web3.py `ContractEvent` to listen to
         """
 
     @cached_property
-    def events_to_listen(self) -> Dict[bytes, ContractEvent]:
-        return {
-            HexBytes(event_abi_to_log_topic(event.abi)).hex(): event
-            for event in self.contract_events
-        }
+    def events_to_listen(self) -> Dict[bytes, List[ContractEvent]]:
+        """
+        Build a dictionary with a `topic` and a list of ABIs to use for decoding. One single topic can have
+        multiple ways of decoding as events with different `indexed` parameters must be decoded
+        in a different way
+
+        :return: Dictionary with `topic` as the key and a list of `ContractEvent`
+        """
+        events_to_listen = {}
+        for event in self.contract_events:
+            key = HexBytes(event_abi_to_log_topic(event.abi)).hex()
+            events_to_listen.setdefault(key, []).append(event)
+        return events_to_listen
 
     def _do_node_query(
         self,
@@ -236,21 +212,35 @@ class EventsIndexer(EthereumIndexer):
         )
         return log_receipts
 
+    def decode_element(self, log_receipt: LogReceipt) -> Optional[EventData]:
+        """
+        :param log_receipt:
+        :return: Decode `log_receipt` using all the possible ABIs for the topic. Returns `EventData` if successful,
+            or `None` if decoding was not possible
+        """
+        for event_to_listen in self.events_to_listen[log_receipt["topics"][0].hex()]:
+            # Try to decode using all the existing ABIs
+            try:
+                return event_to_listen.process_log(log_receipt)
+            except LogTopicError:
+                continue
+
+        logger.error(
+            "Unexpected log format for log-receipt %s",
+            log_receipt,
+        )
+        return None
+
     def decode_elements(self, log_receipts: Sequence[LogReceipt]) -> List[EventData]:
+        """
+        :param log_receipts:
+        :return: Decode `log_receipts` and return a list of `EventData`. If a `log_receipt` cannot be decoded
+            `EventData` it will be skipped
+        """
         decoded_elements = []
         for log_receipt in log_receipts:
-            try:
-                decoded_elements.append(
-                    self.events_to_listen[log_receipt["topics"][0].hex()].processLog(
-                        log_receipt
-                    )
-                )
-            except LogTopicError:
-                logger.error(
-                    "Unexpected log format for log-receipt %s",
-                    log_receipt,
-                    exc_info=True,
-                )
+            if decoded_element := self.decode_element(log_receipt):
+                decoded_elements.append(decoded_element)
         return decoded_elements
 
     def process_elements(self, log_receipts: Sequence[LogReceipt]) -> List[Any]:
@@ -267,7 +257,11 @@ class EventsIndexer(EthereumIndexer):
         not_processed_log_receipts = [
             log_receipt
             for log_receipt in log_receipts
-            if self.mark_as_processed(log_receipt)
+            if not self.element_already_processed_checker.is_processed(
+                log_receipt["transactionHash"],
+                log_receipt["blockHash"],
+                log_receipt["logIndex"],
+            )
         ]
         decoded_elements: List[EventData] = self.decode_elements(
             not_processed_log_receipts
@@ -284,4 +278,14 @@ class EventsIndexer(EthereumIndexer):
             if processed_element := self._process_decoded_element(decoded_element):
                 processed_elements.append(processed_element)
         logger.debug("End processing %d decoded events", len(decoded_elements))
+
+        logger.debug("Marking events as processed")
+        for log_receipt in not_processed_log_receipts:
+            self.element_already_processed_checker.mark_as_processed(
+                log_receipt["transactionHash"],
+                log_receipt["blockHash"],
+                log_receipt["logIndex"],
+            )
+        logger.debug("Marked events as processed")
+
         return processed_elements

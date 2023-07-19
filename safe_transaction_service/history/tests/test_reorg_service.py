@@ -66,12 +66,6 @@ class TestReorgService(TestCase):
             IndexingStatus.objects.get_erc20_721_indexing_status().block_number,
             block_number,
         )
-
-        # SafeContract are not updated anymore
-        # self.assertEqual(
-        #    SafeContract.objects.filter(erc20_block_number=block_number).count(),
-        #    elements - 1,
-        # )
         self.assertEqual(
             ProxyFactory.objects.filter(tx_block_number=block_number).count(),
             elements - 1,

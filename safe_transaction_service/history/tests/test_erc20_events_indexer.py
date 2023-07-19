@@ -45,9 +45,6 @@ class TestErc20EventsIndexer(EthereumTestCaseMixin, TestCase):
             IndexingStatus.objects.get_erc20_721_indexing_status().block_number, 0
         )
 
-        # Erc20 block number are not stored on SafeContract anymore
-        self.assertEqual(safe_contract.erc20_block_number, 0)
-
         self.assertEqual(
             IndexingStatus.objects.get_erc20_721_indexing_status().block_number,
             self.ethereum_client.current_block_number
@@ -69,7 +66,7 @@ class TestErc20EventsIndexer(EthereumTestCaseMixin, TestCase):
         )[0]
         self.assertIn("value", event["args"])
 
-    def test_mark_as_processed(self):
+    def test_element_already_processed_checker(self):
         # Create transaction in db so not fetching of transaction is needed
         for log_receipt in log_receipt_mock:
             tx_hash = log_receipt["transactionHash"]
@@ -77,11 +74,14 @@ class TestErc20EventsIndexer(EthereumTestCaseMixin, TestCase):
             EthereumTxFactory(tx_hash=tx_hash, block__block_hash=block_hash)
 
         # After the first processing transactions will be cached to prevent reprocessing
-        self.assertEqual(len(self.erc20_events_indexer._processed_element_cache), 0)
+        processed_element_cache = (
+            self.erc20_events_indexer.element_already_processed_checker._processed_element_cache
+        )
+        self.assertEqual(len(processed_element_cache), 0)
         self.assertEqual(
             len(self.erc20_events_indexer.process_elements(log_receipt_mock)), 1
         )
-        self.assertEqual(len(self.erc20_events_indexer._processed_element_cache), 1)
+        self.assertEqual(len(processed_element_cache), 1)
 
         # Transactions are cached and will not be reprocessed
         self.assertEqual(
@@ -92,7 +92,7 @@ class TestErc20EventsIndexer(EthereumTestCaseMixin, TestCase):
         )
 
         # Cleaning the cache will reprocess the transactions again
-        self.erc20_events_indexer._processed_element_cache.clear()
+        self.erc20_events_indexer.element_already_processed_checker.clear()
         self.assertEqual(
             len(self.erc20_events_indexer.process_elements(log_receipt_mock)), 1
         )

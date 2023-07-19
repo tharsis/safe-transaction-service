@@ -32,6 +32,7 @@ from .models import (
     EthereumBlock,
     InternalTxDecoded,
     MultisigTransaction,
+    SafeContract,
     SafeLastStatus,
     SafeStatus,
     WebHook,
@@ -130,8 +131,8 @@ def index_erc20_events_out_of_sync_task(
 
     current_block_number = erc20_events_indexer.ethereum_client.current_block_number
     addresses = addresses or [
-        x.address
-        for x in erc20_events_indexer.get_almost_updated_addresses(
+        almost_updated_address.address
+        for almost_updated_address in erc20_events_indexer.get_almost_updated_addresses(
             current_block_number
         )[:number_of_addresses]
     ]
@@ -247,13 +248,20 @@ def process_decoded_internal_txs_task(self) -> Optional[int]:
     with contextlib.suppress(LockError):
         with only_one_running_task(self):
             count = 0
+            banned_safes = set(SafeContract.objects.get_banned_safes())
             for (
                 safe_to_process
             ) in InternalTxDecoded.objects.safes_pending_to_be_processed().iterator():
-                count += 1
-                process_decoded_internal_txs_for_safe_task.delay(
-                    safe_to_process, reindex_master_copies=False
-                )
+                if safe_to_process not in banned_safes:
+                    count += 1
+                    process_decoded_internal_txs_for_safe_task.delay(
+                        safe_to_process, reindex_master_copies=True
+                    )
+                else:
+                    logger.info(
+                        "Ignoring decoded internal txs for banned safe %s",
+                        safe_to_process,
+                    )
 
             if not count:
                 logger.info("No Safes to process")
@@ -262,7 +270,7 @@ def process_decoded_internal_txs_task(self) -> Optional[int]:
 
 
 @app.shared_task(bind=True, soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
-def reindex_last_hours_task(self, hours: int = 2) -> Optional[int]:
+def reindex_mastercopies_last_hours_task(self, hours: float = 2.5) -> Optional[int]:
     """
     Reindexes last hours for master copies to prevent indexing issues
     """
@@ -283,58 +291,87 @@ def reindex_last_hours_task(self, hours: int = 2) -> Optional[int]:
                         from_block_number,
                         to_block_number,
                     )
-                    reindex_master_copies_task.delay(from_block_number, to_block_number)
+                    reindex_master_copies_task.delay(
+                        from_block_number, to_block_number=to_block_number
+                    )
+
+
+@app.shared_task(bind=True, soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
+def reindex_erc20_erc721_last_hours_task(self, hours: float = 2.5) -> Optional[int]:
+    """
+    Reindexes last hours for erx20 and erc721 to prevent indexing issues
+    """
+    with contextlib.suppress(LockError):
+        with only_one_running_task(self):
+            if ethereum_block := EthereumBlock.objects.oldest_than(
+                seconds=60 * 60 * hours
+            ).first():
+                from_block_number = ethereum_block.number
+                to_block_number = (
+                    EthereumBlock.objects.order_by("-timestamp").first().number
+                )
+                assert to_block_number >= from_block_number
+                if to_block_number != from_block_number:
                     logger.info(
                         "Reindexing erc20/721 events for last %d hours, from-block=%d to-block=%d",
                         hours,
                         from_block_number,
                         to_block_number,
                     )
-                    # countdown of 30 minutes to execute this reindex after mastercopies reindex is finished
-                    reindex_erc20_events_task.apply_async(
-                        (from_block_number, to_block_number), countdown=60 * 30
+                    reindex_erc20_events_task.delay(
+                        from_block_number, to_block_number=to_block_number
                     )
 
 
 @app.shared_task(bind=True, soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
 def reindex_master_copies_task(
-    self, from_block_number: int, to_block_number: int
+    self,
+    from_block_number: int,
+    to_block_number: Optional[int] = None,
+    addresses: Optional[ChecksumAddress] = None,
 ) -> None:
     """
     Reindexes master copies
     """
     with contextlib.suppress(LockError):
-        with only_one_running_task(self):
+        with only_one_running_task(
+            self, lock_name_suffix=str(addresses) if addresses else None
+        ):
             index_service = IndexServiceProvider()
             logger.info(
-                "Reindexing master copies from-block=%d to-block=%d",
+                "Reindexing master copies from-block=%d to-block=%s addresses=%s",
                 from_block_number,
                 to_block_number,
+                addresses,
             )
             index_service.reindex_master_copies(
-                from_block_number=from_block_number,
-                to_block_number=to_block_number,
+                from_block_number, to_block_number=to_block_number, addresses=addresses
             )
 
 
 @app.shared_task(bind=True, soft_time_limit=SOFT_TIMEOUT, time_limit=LOCK_TIMEOUT)
 def reindex_erc20_events_task(
-    self, from_block_number: int, to_block_number: int
+    self,
+    from_block_number: int,
+    to_block_number: Optional[int] = None,
+    addresses: Optional[ChecksumAddress] = None,
 ) -> None:
     """
     Reindexes master copies
     """
     with contextlib.suppress(LockError):
-        with only_one_running_task(self):
+        with only_one_running_task(
+            self, lock_name_suffix=str(addresses) if addresses else None
+        ):
             index_service = IndexServiceProvider()
             logger.info(
-                "Reindexing erc20/721 events from-block=%d to-block=%d",
+                "Reindexing erc20/721 events from-block=%d to-block=%s addresses=%s",
                 from_block_number,
                 to_block_number,
+                addresses,
             )
             index_service.reindex_erc20_events(
-                from_block_number=from_block_number,
-                to_block_number=to_block_number,
+                from_block_number, to_block_number=to_block_number, addresses=addresses
             )
 
 
@@ -355,6 +392,7 @@ def process_decoded_internal_txs_for_safe_task(
             logger.info(
                 "Start processing decoded internal txs for safe %s", safe_address
             )
+
             tx_processor: SafeTxProcessor = SafeTxProcessorProvider()
             index_service: IndexService = IndexServiceProvider()
 
@@ -396,8 +434,11 @@ def process_decoded_internal_txs_for_safe_task(
                                     block_number,
                                     to_block_number,
                                 )
+                                # Setting the safe address reindexing should be very fast
                                 reindex_master_copies_task.delay(
-                                    block_number, to_block_number
+                                    block_number,
+                                    to_block_number=to_block_number,
+                                    addresses=[safe_address],
                                 )
                             logger.info(
                                 "Safe-address=%s Processing traces again after reindexing",

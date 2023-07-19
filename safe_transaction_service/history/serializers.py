@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from drf_yasg.utils import swagger_serializer_method
-from eth_typing import ChecksumAddress
+from eth_typing import ChecksumAddress, HexStr
 from rest_framework import serializers
 from rest_framework.exceptions import NotFound, ValidationError
 
@@ -369,7 +369,7 @@ class DelegateSignatureCheckerMixin:
 
 
 class DelegateSerializer(DelegateSignatureCheckerMixin, serializers.Serializer):
-    safe = EthereumAddressField(allow_null=True, required=False)
+    safe = EthereumAddressField(allow_null=True, required=False, default=None)
     delegate = EthereumAddressField()
     delegator = EthereumAddressField()
     signature = HexadecimalField(min_length=65)
@@ -474,6 +474,7 @@ class SafeModuleTransactionResponseSerializer(GnosisBaseModelSerializer):
     transaction_hash = serializers.SerializerMethodField()
     block_number = serializers.SerializerMethodField()
     is_successful = serializers.SerializerMethodField()
+    module_transaction_id = serializers.SerializerMethodField()
 
     class Meta:
         model = ModuleTransaction
@@ -490,6 +491,7 @@ class SafeModuleTransactionResponseSerializer(GnosisBaseModelSerializer):
             "data",
             "operation",
             "data_decoded",
+            "module_transaction_id",
         )
 
     def get_block_number(self, obj: ModuleTransaction) -> Optional[int]:
@@ -503,8 +505,11 @@ class SafeModuleTransactionResponseSerializer(GnosisBaseModelSerializer):
     def get_is_successful(self, obj: ModuleTransaction) -> bool:
         return not obj.failed
 
-    def get_transaction_hash(self, obj: ModuleTransaction) -> str:
+    def get_transaction_hash(self, obj: ModuleTransaction) -> HexStr:
         return obj.internal_tx.ethereum_tx_id
+
+    def get_module_transaction_id(self, obj: ModuleTransaction) -> str:
+        return "i" + obj.internal_tx.ethereum_tx_id[2:] + obj.internal_tx.trace_address
 
 
 class SafeMultisigConfirmationResponseSerializer(GnosisBaseModelSerializer):
@@ -731,6 +736,7 @@ class TransferResponseSerializer(serializers.Serializer):
     value = serializers.CharField(allow_null=True, source="_value")
     token_id = serializers.CharField(allow_null=True, source="_token_id")
     token_address = EthereumAddressField(allow_null=True, default=None)
+    transfer_id = serializers.SerializerMethodField()
 
     def get_fields(self):
         result = super().get_fields()
@@ -748,6 +754,14 @@ class TransferResponseSerializer(serializers.Serializer):
             if obj["_token_id"] is not None:
                 return TransferType.ERC721_TRANSFER.name
             return TransferType.UNKNOWN.name
+
+    def get_transfer_id(self, obj: TransferDict) -> str:
+        # Remove 0x on transaction_hash
+        transaction_hash = obj["transaction_hash"][2:]
+        if self.get_type(obj) == "ETHER_TRANSFER":
+            return "i" + transaction_hash + obj["_trace_address"]
+        else:
+            return "e" + transaction_hash + str(obj["_log_index"])
 
     def validate(self, attrs):
         super().validate(attrs)
@@ -967,40 +981,3 @@ class SafeDelegateDeleteSerializer(serializers.Serializer):
 
         attrs["delegator"] = delegator
         return attrs
-
-
-class SafeDelegateSerializer(SafeDelegateDeleteSerializer):
-    """
-    Deprecated in favour of DelegateSerializer
-    """
-
-    label = serializers.CharField(max_length=50)
-
-    def get_valid_delegators(
-        self,
-        ethereum_client: EthereumClient,
-        safe_address: ChecksumAddress,
-        delegate: ChecksumAddress,
-    ) -> List[ChecksumAddress]:
-        """
-        :param ethereum_client:
-        :param safe_address:
-        :param delegate:
-        :return: Valid delegators for a Safe. A delegate shouldn't be able to add itself
-        """
-        return get_safe_owners(safe_address)
-
-    def save(self, **kwargs):
-        safe_address = self.validated_data["safe"]
-        delegate = self.validated_data["delegate"]
-        delegator = self.validated_data["delegator"]
-        label = self.validated_data["label"]
-        obj, _ = SafeContractDelegate.objects.update_or_create(
-            safe_contract_id=safe_address,
-            delegate=delegate,
-            defaults={
-                "label": label,
-                "delegator": delegator,
-            },
-        )
-        return obj

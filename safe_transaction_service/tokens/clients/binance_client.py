@@ -1,20 +1,16 @@
 import logging
 
-import requests
-
+from .base_client import BaseHTTPClient
 from .exceptions import CannotGetPrice
 
 logger = logging.getLogger(__name__)
 
 
-class BinanceClient:  # pragma: no cover
-    def __init__(self):
-        self.http_session = requests.Session()
-
+class BinanceClient(BaseHTTPClient):  # pragma: no cover
     def _get_price(self, symbol: str) -> float:
         url = f"https://api.binance.com/api/v3/avgPrice?symbol={symbol}"
         try:
-            response = self.http_session.get(url, timeout=10)
+            response = self.http_session.get(url, timeout=self.request_timeout)
             api_json = response.json()
             if not response.ok:
                 logger.warning("Cannot get price from url=%s", url)
@@ -36,10 +32,7 @@ class BinanceClient:  # pragma: no cover
     def get_bnb_usd_price(self) -> float:
         return self._get_price("BNBUSDT")
 
-    def get_ada_usd_price(self) -> float:
-        return self._get_price("ADAUSDT")
-
-    def get_eth_usd_price(self) -> float:
+    def get_ether_usd_price(self) -> float:
         """
         :return: current USD price for Ethereum
         :raises: CannotGetPrice
