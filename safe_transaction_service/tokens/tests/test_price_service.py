@@ -162,6 +162,16 @@ class TestPriceService(TestCase):
             price_service.cache_native_coin_usd_price.clear()
             self.assertEqual(price_service.get_xdc_usd_price(), 7.7)
 
+        # Meter
+        with mock.patch.object(CoingeckoClient, "get_mtr_usd_price", return_value=8.0):
+            price_service.ethereum_network = EthereumNetwork.METER_MAINNET
+            price_service.cache_native_coin_usd_price.clear()
+            self.assertEqual(price_service.get_mtr_usd_price(), 8.0)
+
+            price_service.ethereum_network = EthereumNetwork.METER_TESTNET
+            price_service.cache_native_coin_usd_price.clear()
+            self.assertEqual(price_service.get_mtr_usd_price(), 8.0)
+
     @mock.patch.object(CoingeckoClient, "get_bnb_usd_price", return_value=3.0)
     @mock.patch.object(KucoinClient, "get_bnb_usd_price", return_value=5.0)
     def test_get_binance_usd_price(
@@ -274,3 +284,22 @@ class TestPriceService(TestCase):
         curve_price = "0xe7ce624c00381b4b7abb03e633fb4acac4537dd6"
         eth_price = price_service.get_token_eth_price_from_composed_oracles(curve_price)
         self.assertEqual(eth_price, 1.0)
+
+    def test_get_token_eth_price_from_oracles(self):
+        mainnet_node = just_test_if_mainnet_node()
+        price_service = PriceService(EthereumClient(mainnet_node), self.redis)
+        gno_token_address = "0x6810e776880C02933D47DB1b9fc05908e5386b96"
+        token_eth_value = price_service.get_token_eth_price_from_oracles(
+            gno_token_address
+        )
+        self.assertIsInstance(token_eth_value, float)
+        self.assertGreater(token_eth_value, 0)
+        with mock.patch.object(
+            PriceService, "get_token_eth_value", autospec=True, return_value=0
+        ):
+            token_eth_value_from_coingecko = (
+                price_service.get_token_eth_price_from_oracles(gno_token_address)
+            )
+            self.assertAlmostEqual(
+                token_eth_value, token_eth_value_from_coingecko, delta=0.1
+            )
