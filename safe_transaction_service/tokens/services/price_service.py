@@ -203,11 +203,17 @@ class PriceService:
     def get_xdc_usd_price(self) -> float:
         return self.kucoin_client.get_xdc_usd_price()
 
+    def get_ftm_usd_price(self) -> float:
+        return self.kucoin_client.get_ftm_usd_price()
+
     def get_kcs_usd_price(self) -> float:
         try:
             return self.kucoin_client.get_kcs_usd_price()
         except CannotGetPrice:
             return self.coingecko_client.get_kcs_usd_price()
+
+    def get_mtr_usd_price(self) -> float:
+        return self.coingecko_client.get_mtr_usd_price()
 
     @cachedmethod(cache=operator.attrgetter("cache_ether_usd_price"))
     @cache_memoize(60 * 30, prefix="balances-get_ether_usd_price")  # 30 minutes
@@ -303,6 +309,16 @@ class PriceService:
             EthereumNetwork.XDC_APOTHEM_NETWORK,
         ):
             return self.get_xdc_usd_price()
+        elif self.ethereum_network in (
+            EthereumNetwork.METER_MAINNET,
+            EthereumNetwork.METER_TESTNET,
+        ):
+            return self.coingecko_client.get_mtr_usd_price()
+        elif self.ethereum_network in (
+            EthereumNetwork.FANTOM_OPERA,
+            EthereumNetwork.FANTOM_TESTNET,
+        ):
+            return self.get_ftm_usd_price()
         else:
             return self.get_ether_usd_price()
 
@@ -364,7 +380,7 @@ class PriceService:
     def get_token_usd_price(self, token_address: ChecksumAddress) -> float:
         """
         :param token_address:
-        :return: usd value for a given `token_address` using Curve, if not use Coingecko as last resource
+        :return: usd value for a given `token_address` using Coingecko
         """
         if self.coingecko_client.supports_network(self.ethereum_network):
             try:
@@ -463,7 +479,8 @@ class PriceService:
         """
         return (
             self.get_token_eth_value(token_address)
-            or self.get_token_usd_price(token_address) / self.get_ether_usd_price()
+            or self.get_token_usd_price(token_address)
+            / self.get_native_coin_usd_price()
         )
 
     def get_token_eth_price_from_composed_oracles(
