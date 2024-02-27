@@ -429,6 +429,9 @@ REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 # Ethereum RPC
 # ------------------------------------------------------------------------------
 ETHEREUM_NODE_URL = env("ETHEREUM_NODE_URL", default=None)
+HIDE_ETHEREUM_RPC = env.bool(
+    "HIDE_ETHEREUM_RPC", default=False
+)  # Don't expose the Ethereum RPC URL
 
 # Tracing indexing configuration (not useful for L2 indexing)
 # ------------------------------------------------------------------------------
