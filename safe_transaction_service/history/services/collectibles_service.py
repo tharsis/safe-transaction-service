@@ -242,6 +242,11 @@ class CollectiblesService:
 
         try:
             logger.debug("Getting metadata for uri=%s", uri)
+
+            raise MetadataRetrievalException(
+                f"metadata retrieval is disabled"
+            ) # Disable metadata retrieval due to security concerns
+
             with requests.get(uri, timeout=10, stream=True) as response:
                 if not response.ok:
                     logger.debug("Cannot get metadata for uri=%s", uri)
